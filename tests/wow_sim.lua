@@ -438,6 +438,36 @@ do
     ns.recalc()
 end
 
+-- tools, cooldowns, specializations, starter recipes
+do
+    local ch = ns.Recipes.char(); ch.commit, ch.stock = {}, {}
+    local D = ns.Data
+    D.tools, D.toolNames, D.toolItems = { [2387] = { 900 } }, { [900] = "Sewing Needle" }, { [900] = { 7777 } }
+    D.items[7777] = { 250, 50 }
+    ProfPathDB.vendor[7777] = 250                                 -- a vendor sells the needle
+    D.cooldown = { [3915] = 86400 }                               -- pretend Bolt of Linen has a 1-day cooldown
+    D.recipes[55555] = { 197, 1, 30, 50, 2568, 1, { 2589, 1 }, "Spec Cloak" }
+    D.recipeItems[55555] = { 4001, 1, 12345 }                     -- needs a specialization spell
+    D.autoLearn = { [55555] = true }
+    SlashCmdList.PROFPATH("target max")
+    local recipes, info = ns.Recipes.build(st.prof)
+    local byId = {}
+    for _, r in ipairs(recipes) do byId[r.id] = r end
+    assert(byId[2387].toolCost == 250 and byId[2387].toolsMissing[1].name == "Sewing Needle", "missing tool priced")
+    assert(byId[3915] and byId[3915].noLevel, "known cooldown recipe kept as producer, not for leveling")
+    assert(not byId[55555] and info.specSkipped == 1, "specialization recipe skipped")
+    for _, s in ipairs(st.result.steps) do assert(s.recipe.id ~= 3915, "cooldown recipe used for leveling") end
+    simBags[7777] = 1; ns.recalc()                                -- now carrying the needle
+    recipes = ns.Recipes.build(st.prof)
+    for _, r in ipairs(recipes) do if r.id == 2387 then assert(not r.toolCost, "tool in bags: no cost") end end
+    simBags[7777] = nil
+    ns.UI.setTab(2); ns.UI.setTab(3)                              -- tool rows render
+    D.tools, D.toolNames, D.toolItems, D.cooldown, D.autoLearn = {}, {}, {}, {}, {}
+    D.recipes[55555], D.recipeItems[55555] = nil, nil
+    ch.commit, ch.stock = {}, {}
+    ns.recalc()
+end
+
 -- learn requirement from the recipe item is respected
 for _, s in ipairs(st.result.steps) do
     if s.recipe.id == 12046 then assert(s.fromSkill >= 55, "learned before required skill") end

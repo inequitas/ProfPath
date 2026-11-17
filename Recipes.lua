@@ -363,15 +363,101 @@ local function learnInfo(prof, id, name)
     return cost, req, source
 end
 
+-- ---------- specializations and tools ----------
+
+-- Do you know this spell (a specialization such as Tribal Leatherworking or Armorsmith)?
+local function knowsSpell(spellID)
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
+        if ok and known then return true end
+    end
+    if IsPlayerSpell then
+        local ok, known = pcall(IsPlayerSpell, spellID)
+        if ok and known then return true end
+    end
+    return false
+end
+R.knowsSpell = knowsSpell
+
+local function inBags(itemID)
+    local count = (C_Item and C_Item.GetItemCount) or GetItemCount
+    return count and (count(itemID) or 0) > 0
+end
+
+-- Cheapest way to get one of an item: vendor, auction house, or crafting it from a recipe in the
+-- data (one level: its materials at vendor/AH prices). Returns cost, "vendor"|"AH"|"craft", or nil.
+local makers -- [itemID] = recipe data rows that create it (built once)
+local function itemCost(itemID)
+    if not makers then
+        makers = {}
+        for _, d in pairs(ns.Data.recipes) do
+            if d[5] then makers[d[5]] = makers[d[5]] or {}; table.insert(makers[d[5]], d) end
+        end
+    end
+    local best, how
+    local v = ns.Prices.vendorBuy(itemID)
+    if v then best, how = v, "vendor" end
+    local ah = ns.Prices.ahUnit(itemID)
+    if ah and (not best or ah < best) then best, how = ah, "AH" end
+    for _, d in ipairs(makers[itemID] or {}) do
+        local c, rg = 0, d[7]
+        for i = 1, #rg, 2 do
+            local u = ns.Prices.vendorBuy(rg[i]) or ns.Prices.ahUnit(rg[i])
+            if not u then c = nil; break end
+            c = c + u * rg[i + 1]
+        end
+        if c and (not best or c / (d[6] or 1) < best) then best, how = c / (d[6] or 1), "craft" end
+    end
+    return best, how
+end
+
+-- Per tool category: do you carry one, and what does the cheapest one cost? Cached per build
+-- (many recipes share a tool), cleared at the start of every R.build.
+local toolCache = {}
+local function toolStatus(c)
+    local s = toolCache[c]
+    if s then return s end
+    local items = ns.Data.toolItems and ns.Data.toolItems[c] or {}
+    s = { name = ns.Data.toolNames and ns.Data.toolNames[c] or "a tool" }
+    for _, id in ipairs(items) do if inBags(id) then s.have = true end end
+    if not s.have then
+        for _, id in ipairs(items) do
+            local cost, how = itemCost(id)
+            if cost and (not s.cost or cost < s.cost) then s.cost, s.how, s.itemID = cost, how, id end
+        end
+    end
+    toolCache[c] = s
+    return s
+end
+
+-- For a recipe's required tools: which you lack, and what getting them costs.
+-- Returns missing = { {name, cost, how, itemID}, ... }, totalCost (nil if one has no known cost).
+function R.toolsNeeded(recipeID)
+    local cats = ns.Data.tools and ns.Data.tools[recipeID]
+    if not cats then return nil end
+    local missing, total = {}, 0
+    for _, c in ipairs(cats) do
+        local s = toolStatus(c)
+        if not s.have then
+            missing[#missing + 1] = s
+            total = (total and s.cost) and total + s.cost or nil
+        end
+    end
+    if #missing == 0 then return nil end
+    return missing, total
+end
+
 -- Returns recipes, info = { unknownLearn = n, estimated = n, noLearnedData = bool }
 function R.build(prof)
     local c = R.char()
     local learned = c.learned[prof.name]
-    local info = { unknownLearn = 0, estimated = 0, estimatedLearn = 0, noLearnedData = learned == nil,
+    local info = { unknownLearn = 0, estimated = 0, estimatedLearn = 0, specSkipped = 0, cooldownSkipped = 0,
+        toolSkipped = 0, noLearnedData = learned == nil,
         trainerSeen = ProfPathDB.trainerSeen[prof.name] ~= nil, mismatches = c.mismatches and c.mismatches[prof.name] }
     learned = learned or {}
     local list = {}
     local estCost = costModel(prof)
+    toolCache = {} -- bags and prices may have changed since the last build
     for id, d in pairs(ns.Data.recipes) do
         -- Keep learned gray recipes: they can still craft intermediates for other recipes.
         if d[1] == prof.skillLine and (d[4] > (prof.rank or 0) or learned[id]) then
@@ -380,7 +466,36 @@ function R.build(prof)
             for i = 1, #rg, 2 do reagents[#reagents + 1] = { rg[i], rg[i + 1] } end
             local r = { id = id, name = d[8], minSkill = d[2], yellow = d[3], gray = d[4],
                 productID = d[5], productQty = d[6] or 1, reagents = reagents, learned = learned[id] == true }
-            if not r.learned then
+            local ri = ns.Data.recipeItems[id]
+            local skip
+            -- Long cooldown (transmutes, Mooncloth): never a leveling step; still a known producer.
+            if ns.Data.cooldown and ns.Data.cooldown[id] then
+                r.noLevel, r.cooldown = true, ns.Data.cooldown[id]
+                if not r.learned then skip = true; info.cooldownSkipped = info.cooldownSkipped + 1 end
+            end
+            -- Specialization recipe you can't learn (e.g. Tribal Leatherworking without that spec).
+            if not skip and not r.learned and ri and (ri[3] or 0) ~= 0 and not knowsSpell(ri[3]) then
+                skip = true
+                info.specSkipped = info.specSkipped + 1
+            end
+            -- Starter recipes come with the profession.
+            if not skip and not r.learned and ns.Data.autoLearn and ns.Data.autoLearn[id] then
+                r.learned = true
+            end
+            -- Tools you don't carry: the cheapest way to get them is a one-time cost of this recipe.
+            if not skip then
+                local missing, toolCost = R.toolsNeeded(id)
+                if missing then
+                    if toolCost then
+                        r.toolCost, r.toolsMissing = toolCost, missing
+                    else
+                        skip = true
+                        info.toolSkipped = info.toolSkipped + 1
+                    end
+                end
+            end
+            if skip then r = nil end
+            if r and not r.learned then
                 local cost, req, source = learnInfo(prof, id, r.name)
                 -- No recipe item and no trainer entry: a trainer recipe the trainer could not show yet
                 -- (needs a higher rank, or the trainer was never visited). Estimate it. If the trainer
@@ -398,7 +513,7 @@ function R.build(prof)
                 if req and req > r.minSkill then r.minSkill = req end
                 if not cost then info.unknownLearn = info.unknownLearn + 1 end
             end
-            list[#list + 1] = r
+            if r then list[#list + 1] = r end
         end
     end
     for id, l in pairs(c.live[prof.name] or {}) do

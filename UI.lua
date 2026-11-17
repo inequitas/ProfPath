@@ -578,6 +578,9 @@ local function renderStepDetail(st)
     else
         learn = ("Learn at a trainer for %s, needs skill %d."):format(money(r.learnCost or 0), r.learnReq or r.minSkill)
     end
+    for _, t in ipairs(r.toolsMissing or {}) do
+        learn = learn .. ("\nNeeds a |cffffffff%s|r, which you don't carry (about %s)."):format(t.name, money(t.cost))
+    end
     local f = text("GameFontHighlightSmall", x0, y, CONTENT - x0 - 4, learn .. "\n" .. colourRange(r), "LEFT", true)
     y = y + f:GetStringHeight() + 6
     for _, rg in ipairs(st.reagents) do
@@ -664,7 +667,8 @@ local function renderPlan(state)
                 ("|cff33ccff%d - %d|r   %s%s"):format(st.fromSkill, st.toSkill, st.recipe.name or "?",
                     st.recipe.estimated and " |cffaaaaaa(est.)|r" or ""),
                 ("%d crafts%s"):format(math.ceil(st.expectedCrafts - 1e-9),
-                    st.learnCost > 0 and ("  -  learn for " .. money(st.learnCost) .. estLearn) or ""),
+                    st.learnCost > 0 and (("  -  %s %s%s"):format(st.recipe.toolsMissing and (st.recipe.learned and "tool" or "learn + tool")
+                        or "learn for", money(st.learnCost), estLearn)) or ""),
                 money(st.cost - (st.learnCost or 0)) .. " |cff888888net|r",
                 { zebra = i % 2 == 0, highlight = open, onClick = function()
                     state.selected = (state.selected ~= key) and key or nil
@@ -684,6 +688,9 @@ local function renderPlan(state)
         notes[#notes + 1] = info.estimatedLearn .. " trainer recipes past your cap use estimated costs"
     end
     if info.unknownLearn > 0 then notes[#notes + 1] = info.unknownLearn .. " recipes skipped (no way to learn known)" end
+    if (info.specSkipped or 0) > 0 then notes[#notes + 1] = info.specSkipped .. " need a specialization you don't have" end
+    if (info.cooldownSkipped or 0) > 0 then notes[#notes + 1] = info.cooldownSkipped .. " have a long cooldown" end
+    if (info.toolSkipped or 0) > 0 then notes[#notes + 1] = info.toolSkipped .. " need a tool with no known price" end
     if res.missing and #res.missing > 0 then notes[#notes + 1] = #res.missing .. " materials have no price" end
     if state.ms then notes[#notes + 1] = ("calculated in %d ms"):format(floor(state.ms + 0.5)) end
     if #notes > 0 then y = y + 6; para("|cff888888" .. table.concat(notes, "  -  ") .. "|r") end
@@ -740,12 +747,20 @@ local function renderDo(state)
     section(("Now:  %s  |cff33ccff%d -> %d|r"):format(r.name or "?", st.fromSkill, st.toSkill))
 
     -- 1. learn
-    if st.learnCost > 0 or not r.learned then
-        line(itemIcon(r.productID), num() .. "Learn " .. (r.name or "?"), learnText(r), money(st.learnCost),
-            { status = r.learned and ICON_OK or ICON_TODO })
-        if not r.learned and not (r.learnSource and r.learnSource.kind == "item") then trainerHint(prof.name) end
+    if not r.learned then
+        line(itemIcon(r.productID), num() .. "Learn " .. (r.name or "?"), learnText(r), money(r.learnCost or 0),
+            { status = ICON_TODO })
+        if not (r.learnSource and r.learnSource.kind == "item") then trainerHint(prof.name) end
     else
         line(itemIcon(r.productID), num() .. "Learn " .. (r.name or "?"), "You know this recipe.", nil, { status = ICON_OK })
+    end
+    -- Tools this recipe needs that you don't carry (rods, hammers, spanners).
+    local HOW = { vendor = "Sold by vendors", AH = "On the auction house",
+        craft = "You can craft it (cheaper than buying)" }
+    for _, t in ipairs(r.toolsMissing or {}) do
+        line(t.itemID and itemIcon(t.itemID) or nil, num() .. "Get a " .. t.name,
+            (HOW[t.how] or "Needed to craft this recipe") .. "; keep it in your bags.", money(t.cost),
+            { status = ICON_TODO })
     end
 
     -- Batch mode: if this step's materials cost more than the budget (after any learn cost), show

@@ -32,6 +32,11 @@ local INF = math.huge
 local CRAFT_TIEBREAK = 1 -- 1 copper per craft: prefer fewer crafts when costs tie
 local AH_CUT = 0.95
 
+-- One-time cost of starting to use a recipe: learning it (if not known) plus any tool you lack.
+function O.oneTimeCost(r)
+    return (r.learned and 0 or (r.learnCost or INF)) + (r.toolCost or 0)
+end
+
 function O.chance(r, s)
     if s < (r.minSkill or 0) or s >= r.gray then return 0 end
     if s < r.yellow then return 1 end
@@ -101,7 +106,8 @@ local function solve(ctx, unitCost)
     -- other learned recipes can still craft intermediates.
     local recipes = {}
     for _, r in ipairs(ctx.recipes) do
-        if r.gray > s0 and (r.minSkill or 0) < target and (not ctx.onlyLevel or ctx.onlyLevel[r.id]) then
+        if r.gray > s0 and (r.minSkill or 0) < target and not r.noLevel
+            and (not ctx.onlyLevel or ctx.onlyLevel[r.id]) then
             recipes[#recipes + 1] = r
         end
     end
@@ -118,7 +124,7 @@ local function solve(ctx, unitCost)
     for s = s0, target - 1 do
         local best, bestI = INF, nil
         for i, r in ipairs(recipes) do
-            local learn = r.learned and 0 or (r.learnCost or INF)
+            local learn = O.oneTimeCost(r)
             local viaEnter = dist[s] + learn
             local viaCont = g[i]
             if viaEnter <= viaCont then g[i] = viaEnter; enter[i][s] = true
@@ -147,7 +153,7 @@ local function solve(ctx, unitCost)
         local r = recipes[i]
         local hi = s
         repeat s = s - 1 until enter[i][s]
-        local learn = r.learned and 0 or r.learnCost
+        local learn = O.oneTimeCost(r)
         local prev = steps[1]
         if prev and prev.recipe == r and prev.learnCost == 0 then
             prev.fromSkill = s -- merge adjacent runs of the same recipe
@@ -261,16 +267,22 @@ function O.optimize(ctx)
         end
     end
     if learnSum > 0 then
-        for r in pairs(learnSet) do r.learned = true end
+        -- Mark the chosen recipes as free for the re-solve, then put back exactly what they were
+        -- (a known recipe can still have a one-time cost: a tool you don't have).
+        local saved = {}
+        for r in pairs(learnSet) do
+            saved[r] = { r.learned, r.toolCost, O.oneTimeCost(r) }
+            r.learned, r.toolCost = true, nil
+        end
         ctx.unitOverride = override
         local steps2, total2 = solve(ctx, unitCost)
         ctx.unitOverride = nil
-        for r in pairs(learnSet) do r.learned = false end
+        for r, s in pairs(saved) do r.learned, r.toolCost = s[1], s[2] end
         if steps2 and total2 + learnSum < total - 1e-6 then
             for _, st in ipairs(steps2) do
                 if learnSet[st.recipe] then
                     learnSet[st.recipe] = nil
-                    st.learnCost = st.recipe.learnCost
+                    st.learnCost = saved[st.recipe][3]
                     st.cost = st.cost + st.learnCost
                 end
             end
@@ -488,7 +500,8 @@ function O.dominated(ctx, factor)
             productKnown = ah ~= nil or (ctx.resaleFactor or 0.5) == 0
             rec = recovery(ctx, r.productID) * (r.productQty or 1)
         end
-        local learn = r.learned and 0 or r.learnCost
+        local learn = O.oneTimeCost(r)
+        if r.noLevel then learn = INF end -- never a leveling step, so never the yardstick
         bounds[r] = { lb = math.max(lb - rec, 0), margin = productKnown and factor or factor * 2 }
 
         -- Fully priced and already known (or free to learn): a cost per point you can always get.
@@ -519,7 +532,7 @@ function O.dominated(ctx, factor)
                 if not (perPoint > b.margin * best[s]) then beatenEverywhere = false; break end
             end
         end
-        if not useful or beatenEverywhere then out[r] = true end
+        if not useful or beatenEverywhere or r.noLevel then out[r] = true end
     end
     return out
 end

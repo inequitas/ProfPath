@@ -278,6 +278,22 @@ test("onlyLevel: a locked plan levels only with its recipes", function()
     eq(O.optimize(ctxWith({ [100] = 10, [101] = 5 }, recipes)).steps[1].recipe.id, 2, "fresh plan picks 2")
 end)
 
+test("cooldown recipes never level; a missing tool is a one-time cost", function()
+    local recipes = {
+        R{ id = 1, yellow = 50, gray = 60, noLevel = true, reagents = { { 100, 1 } } },     -- cheapest, but cooldown
+        R{ id = 2, yellow = 50, gray = 60, reagents = { { 101, 1 } } },                     -- 20/craft
+        R{ id = 3, yellow = 50, gray = 60, toolCost = 50, reagents = { { 102, 1 } } },      -- 10/craft + tool 50
+    }
+    local prices = { [100] = 1, [101] = 20, [102] = 10 }
+    local res = O.optimize(ctxWith(prices, recipes, { target = 4 }))         -- 3 points: tool doesn't pay off
+    eq(res.steps[1].recipe.id, 2, "short: no tool")
+    res = O.optimize(ctxWith(prices, recipes, { target = 30 }))              -- 29 points: tool pays off
+    eq(res.steps[1].recipe.id, 3, "long: buy the tool")
+    eq(res.steps[1].learnCost, 50, "tool cost reported as the one-time cost")
+    for _, st in ipairs(res.steps) do assert(st.recipe.id ~= 1, "cooldown recipe used") end
+    assert(recipes[3].learned and recipes[3].toolCost == 50, "recipe state restored after re-solve")
+end)
+
 test("owned materials are free", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } },
