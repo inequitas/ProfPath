@@ -8,6 +8,20 @@ ProfPath looks at your character (known recipes, bags, gold) and your auction ho
 path from your current skill, and keeps re-checking it while you level. Type `/pp` in game or use the
 minimap button: **Prepare → Plan → Do it**. Run `/pp help` for all commands.
 
+## What's new
+
+**[v0.1.1](https://github.com/inequitas/ProfPath/releases/tag/v0.1.1): Tools, cooldowns and specializations** *(2026-11-17)*
+
+- **Required tools:** enchanting rods, the Blacksmith Hammer, Arclight Spanner, Gyromatic Micro-Adjustor and
+  Philosopher's Stone are now known. If you don't carry one, the plan includes the cheapest way to get it,
+  and the Do it list tells you to get it.
+- **Specialization recipes** (Tribal, Dragonscale and Elemental Leatherworking, Armorsmith, Weaponsmith,
+  Gnomish and Goblin Engineering) are only suggested if you have that specialization.
+- **Long cooldowns:** transmutes, Mooncloth and similar recipes are no longer used as leveling steps.
+- **Starter recipes** that come with a profession are known right away.
+
+Earlier versions and full details: [CHANGELOG.md](CHANGELOG.md).
+
 ## Development
 
 Requirements: Windows PowerShell, and [Lua 5.4](https://www.lua.org) for the offline tests.
@@ -26,7 +40,8 @@ scans), `Recipes.lua` (professions, recipes, trainers), `Capture.lua` (vendors, 
 (live tracking), `UI.lua` (window), `Minimap.lua`, `Core.lua` (glue, slash commands), `Data/` (generated
 data). Design notes are in `PLAN.md`.
 
-To release: raise `## Version:` in `ProfPath.toc`, run the tests, commit, then push a matching tag
+To release: raise `## Version:` in `ProfPath.toc`, add the release to `CHANGELOG.md` and to "What's new"
+above, run the tests, commit, then push a matching tag
 (`git tag v0.1.1` and `git push origin v0.1.1`). The Release workflow (`.github/workflows/release.yml`,
 BigWigs packager with `.pkgmeta`) builds the zip and uploads it to CurseForge for WoW Forever and to a GitHub
 release. It needs the repository secret `CF_API_KEY` (a CurseForge API token).
