@@ -26,8 +26,10 @@ scans), `Recipes.lua` (professions, recipes, trainers), `Capture.lua` (vendors, 
 (live tracking), `UI.lua` (window), `Minimap.lua`, `Core.lua` (glue, slash commands), `Data/` (generated
 data). Design notes are in `PLAN.md`.
 
-To release: raise `## Version:` in `ProfPath.toc`, run the tests, build the zip and upload it to CurseForge
-for game version Forever.
+To release: raise `## Version:` in `ProfPath.toc`, run the tests, commit, then push a matching tag
+(`git tag v0.1.1` and `git push origin v0.1.1`). The Release workflow (`.github/workflows/release.yml`,
+BigWigs packager with `.pkgmeta`) builds the zip and uploads it to CurseForge for WoW Forever and to a GitHub
+release. It needs the repository secret `CF_API_KEY` (a CurseForge API token).
 
 ## Credits
 

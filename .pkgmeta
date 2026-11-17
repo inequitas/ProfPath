@@ -1,0 +1,12 @@
+# Packaging rules for the BigWigs packager (GitHub Actions release). Mirrors tools/package.ps1:
+# the zip holds the addon only.
+package-as: ProfPath
+
+ignore:
+  - tools
+  - tests
+  - PLAN.md
+  - CURSEFORGE.md
+  - README.md
+  - Media/icon-256.png
+  - Media/icon-512.png
