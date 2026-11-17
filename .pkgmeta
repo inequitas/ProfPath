@@ -8,5 +8,8 @@ ignore:
   - PLAN.md
   - CURSEFORGE.md
   - README.md
+  - CONTRIBUTING.md
+  - CODE_OF_CONDUCT.md
+  - SECURITY.md
   - Media/icon-256.png
   - Media/icon-512.png
