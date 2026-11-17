@@ -56,6 +56,10 @@ Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/m
 | `/pp minimap on` / `off` | show or hide the minimap button |
 | `/pp about` | version and credits |
 
+## Feedback
+
+Questions or feedback: [Discord](https://discord.com/users/120143105952317440) or [open an issue on GitHub](https://github.com/inequitas/ProfPath/issues).
+
 ## Credits
 
 - **Trainer locations:** [Wowhead](https://www.wowhead.com/forever) (WoW: Forever database and world map).
