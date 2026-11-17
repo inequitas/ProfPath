@@ -1,0 +1,38 @@
+name: Bug report
+description: Something isn't working right
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ProfPath version
+      description: Type /pp about in game
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: profession
+    attributes:
+      label: Profession and skill
+      placeholder: "Leatherworking 84/150"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the auction house and click Full scan
+        2. …
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots help a lot. If there was a Lua error, paste it here (BugSack or /console scriptErrors 1 shows them). Mention price addons you use (Auctionator, TSM).

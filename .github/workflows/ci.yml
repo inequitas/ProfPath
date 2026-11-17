@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main, beta]
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: this workflow only runs the tests, it never
+# writes to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Lua 5.4
+        run: sudo apt-get update -q && sudo apt-get install -y -q lua5.4
+
+      # Pure-Lua planning logic, including randomized checks against brute force.
+      - name: Optimizer tests
+        run: lua5.4 tests/optimizer_spec.lua
+
+      # The whole addon loaded against stubbed game APIs: scans, plans, budgets,
+      # tracking, trainers and the window, without the game.
+      - name: Simulated in-game test
+        run: lua5.4 tests/wow_sim.lua
