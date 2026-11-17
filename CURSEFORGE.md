@@ -8,6 +8,17 @@ then works out the cheapest path from your current skill. As you level, it keeps
 
 Made for **WoW: Forever**.
 
+## What's new
+
+**v0.1.1: Tools, cooldowns and specializations** *(2026-11-17)*
+
+- **Required tools:** enchanting rods, the Blacksmith Hammer, Arclight Spanner, Gyromatic Micro-Adjustor and Philosopher's Stone are now known. If you don't carry one, the plan includes the cheapest way to get it, and the Do it list tells you to get it.
+- **Specialization recipes** (Tribal, Dragonscale and Elemental Leatherworking, Armorsmith, Weaponsmith, Gnomish and Goblin Engineering) are only suggested if you have that specialization.
+- **Long cooldowns:** transmutes, Mooncloth and similar recipes are no longer used as leveling steps.
+- **Starter recipes** that come with a profession are known right away.
+
+Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/main/CHANGELOG.md).
+
 ## What it does
 
 - **Plans the cheapest path** to your target skill, counting:
