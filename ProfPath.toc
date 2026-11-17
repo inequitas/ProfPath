@@ -1,0 +1,23 @@
+## Interface: 16001
+## Title: ProfPath
+## Notes: Cheapest profession leveling path from live auction prices.
+## Author: inequitas
+## Version: 0.1.0
+## X-License: MIT
+## X-Curse-Project-ID: 1812869
+## X-Credits: Trainer locations from Wowhead (wowhead.com). Recipe data from the game files via wago.tools.
+## X-Category: Professions
+## SavedVariables: ProfPathDB
+## IconTexture: Interface\AddOns\ProfPath\Media\icon
+## OptionalDeps: Auctionator, TradeSkillMaster
+
+Data\Recipes.lua
+Data\Trainers.lua
+Optimizer.lua
+Prices.lua
+Capture.lua
+Recipes.lua
+UI.lua
+Core.lua
+Track.lua
+Minimap.lua

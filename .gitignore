@@ -1,0 +1,6 @@
+# downloaded game-data tables (rebuilt by tools/build_data.ps1)
+tools/.cache/
+# release zips (built by tools/package.ps1)
+dist/
+# icon preview
+Media/icon-64-preview.png
