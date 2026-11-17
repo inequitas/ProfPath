@@ -3,6 +3,7 @@
 **The cheapest way to level your professions in WoW: Forever, worked out from your realm's live auction prices.**
 
 Download: [CurseForge](https://www.curseforge.com/wow/addons/profpath) (WoW: Forever).
+Questions or feedback: [Discord](https://discord.com/users/120143105952317440) or [open an issue](https://github.com/inequitas/ProfPath/issues).
 
 ProfPath looks at your character (known recipes, bags, gold) and your auction house, plans the cheapest
 path from your current skill, and keeps re-checking it while you level. Type `/pp` in game or use the
