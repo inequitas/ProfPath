@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.1: Tools, cooldowns and specializations *(2026-11-17)*
 
 **Fixed**
 - **Specialization recipes are no longer suggested without the specialization.** Recipes that need Tribal, Dragonscale or Elemental Leatherworking, Armorsmith or Weaponsmith (and the Master smith lines), or Gnomish or Goblin Engineering are left out unless you have it. Before, Leatherworking 250+ could suggest Chimeric gear you can't learn.
