@@ -21,6 +21,8 @@ html,body{margin:0;height:100%;background:#15171c;color:#dde;font:13px/1.35 Sego
 .chk{width:38px;text-align:right;color:#9c9}
 .mk{font-size:10px;padding:0 3px;border-radius:3px}
 .mkn{background:#e8c84a;color:#000}.mkd{background:#00e0ff;color:#000}
+.mkc{background:#ffe600;color:#000;font-weight:bold}
+#banner{position:absolute;left:0;right:0;top:0;padding:4px 10px;font-weight:bold;text-align:center;pointer-events:none;display:none}
 #main{flex:1;display:flex;flex-direction:column;min-width:0}
 #head{padding:6px 10px;background:#1c1f26;border-bottom:1px solid #333}
 #head h1{margin:0 0 3px;font-size:16px}
@@ -50,6 +52,7 @@ label{cursor:pointer}
    <select id="fKind"><option value="">All professions</option><option value="mining">Mining</option><option value="herbalism">Herbalism</option></select>
    <select id="fFac"><option value="">All factions</option><option value="A">Alliance</option><option value="H">Horde</option></select>
    <label><input type="checkbox" id="fOnly"> only with notes</label>
+   <label><input type="checkbox" id="fChk"> only with check flags</label>
   </div>
   <div id="list"></div>
  </div>
@@ -58,11 +61,13 @@ label{cursor:pointer}
   <div id="cols">
    <div id="mapwrap"><div id="mapbox"><svg id="svg" viewBox="0 0 1002 668" preserveAspectRatio="none">
      <image id="img" x="0" y="0" width="1002" height="668" preserveAspectRatio="none"/>
-     <g id="gStatic"></g><g id="gDrawn"></g></svg><div id="pos">-, -</div></div></div>
+     <defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="rgba(255,0,0,.18)"/><line x1="0" y1="0" x2="0" y2="10" stroke="rgba(255,40,40,.7)" stroke-width="3"/></pattern></defs><g id="gStatic"></g><g id="gAvoid"></g><g id="gDrawn"></g></svg><div id="pos">-, -</div><div id="banner"></div></div></div>
    <div id="panel">
     <label><input type="checkbox" id="showR"> show stop radius (R)</label>
     <div>
      <button id="bDraw">Draw revised route</button>
+     <button id="bAvoid">Avoid area</button>
+     <button id="bCheck">Check please</button>
      <button id="bUndo">Undo</button>
      <button id="bClear">Clear</button>
      <button id="bStart">Start from current route</button>
@@ -72,7 +77,7 @@ label{cursor:pointer}
     <div class="tags" id="tags"></div>
     <textarea id="notes" placeholder="Notes (N to focus). Shift+click map adds a coordinate."></textarea>
     <div id="status"></div>
-    <div class="hint">Left/Right: previous/next route</div>
+    <div class="hint">Keys: Left/Right = prev/next route, N = notes, A = avoid area, D = draw route, C = check flag, Esc = leave mode</div>
    </div>
   </div>
  </div>
@@ -81,7 +86,7 @@ label{cursor:pointer}
 (function () {
 'use strict';
 var TAGS = ['crosses cliff','through hostile town','dangerous mobs','loops on itself','missing area','looks good'];
-var S = { routes: [], notes: {}, towns: [], cur: null, draw: false, undo: {}, showR: false, fKind: '', fFac: '', fOnly: false, sup: false };
+var S = { routes: [], notes: {}, towns: [], cur: null, draw: false, undo: {}, showR: false, fKind: '', fFac: '', fOnly: false, sup: false, avoid: {}, avMode: false, chMode: false, fChk: false };
 var $ = function (id) { return document.getElementById(id); };
 var SVGNS = 'http://www.w3.org/2000/svg';
 var W = 1002, H = 668;
@@ -93,10 +98,11 @@ function byId(id) { for (var i = 0; i < S.routes.length; i++) if (S.routes[i].id
 // ---------- notes ----------
 function ensureNote(id) {
   var n = S.notes[id];
-  if (!n) n = S.notes[id] = { id: id, tags: [], text: '', drawn: [], updated: '' };
+  if (!n) n = S.notes[id] = { id: id, tags: [], text: '', drawn: [], checks: [], updated: '' };
   if (!n.tags) n.tags = [];
   if (n.text == null) n.text = '';
   if (!n.drawn) n.drawn = [];
+  if (!n.checks) n.checks = [];
   return n;
 }
 function normalizeLoaded(raw) {
@@ -107,12 +113,13 @@ function normalizeLoaded(raw) {
     var flat = (r.drawn && r.drawn.length) ? [].concat(r.drawn) : [];
     var pts = [];
     for (var i = 0; i + 1 < flat.length; i += 2) pts.push([Number(flat[i]), Number(flat[i + 1])]);
-    out[k] = { id: k, tags: r.tags ? [].concat(r.tags) : [], text: r.text || '', drawn: pts, updated: r.updated || '' };
+    out[k] = { id: k, tags: r.tags ? [].concat(r.tags) : [], text: r.text || '', drawn: pts, checks: (r.checks || []).map(function (c) { return { x: Number(c.x), y: Number(c.y), note: c.note || '' }; }), updated: r.updated || '' };
   }
   return out;
 }
 function hasNote(id) { var n = S.notes[id]; return !!(n && ((n.text && n.text.trim()) || n.tags.length)); }
 function hasDrawn(id) { var n = S.notes[id]; return !!(n && n.drawn.length >= 2); }
+function hasChecks(id) { var n = S.notes[id]; return !!(n && n.checks.length); }
 var dirty = {}, saveTimer = null;
 function setStatus(t) { $('status').textContent = t; }
 function markDirty(id) {
@@ -131,7 +138,7 @@ function flush() {
     n.updated = new Date().toISOString();
     var flat = [];
     n.drawn.forEach(function (p) { flat.push(p[0], p[1]); });
-    var body = JSON.stringify({ id: id, tags: n.tags, text: n.text, drawn: flat, updated: n.updated });
+    var body = JSON.stringify({ id: id, tags: n.tags, text: n.text, drawn: flat, checks: n.checks, updated: n.updated });
     fetch('/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
       .then(function (r) { if (!r.ok) throw new Error(r.status); })
       .catch(function () { failed = true; dirty[id] = true; })
@@ -220,9 +227,14 @@ function renderStatic() {
   var op = dim ? 0.4 : 1;
   var rt = r.route || [];
   var pts = pairs(rt);
+  var rc = r.manual ? '#2fd34a' : '#ff5a1f';
+  function pathD(a) { return 'M' + a.map(function (p) { return X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1); }).join(' L'); }
+  if (r.manual && r.generated) {
+    var gp = pairs(r.generated);
+    if (gp.length > 1) o += '<path d="' + pathD(gp) + '" fill="none" stroke="#ff8c00" stroke-width="3" stroke-linejoin="round" opacity="0.45"/>';
+  }
   if (pts.length > 1) {
-    var d = 'M' + pts.map(function (p) { return X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1); }).join(' L');
-    o += '<path d="' + d + '" fill="none" stroke="#ff5a1f" stroke-width="4" stroke-linejoin="round" opacity="' + op + '"/>';
+    o += '<path d="' + pathD(pts) + '" fill="none" stroke="' + rc + '" stroke-width="4" stroke-linejoin="round" opacity="' + op + '"/>';
     // arrows every ~10% of map width
     var step = W * 0.10, next = step / 2, run = 0;
     for (var j = 1; j < pts.length; j++) {
@@ -263,6 +275,13 @@ function renderDrawn() {
       o += '<circle cx="' + X(p[0]) + '" cy="' + Y(p[1]) + '" r="' + (S.draw ? 6 : 3.5) + '" fill="' + (i === 0 ? '#fff' : '#00e5ff') + '" stroke="#003" stroke-width="1.5"/>';
     });
   }
+  (n ? n.checks : []).forEach(function (c) {
+    var fx = X(c.x), fy = Y(c.y);
+    o += '<g><title>' + esc(c.note || 'check please') + '</title><line x1="' + fx + '" y1="' + fy + '" x2="' + fx + '" y2="' + (fy - 22) + '" stroke="#000" stroke-width="3"/>' +
+      '<polygon points="' + fx + ',' + (fy - 22) + ' ' + (fx + 16) + ',' + (fy - 16) + ' ' + fx + ',' + (fy - 10) + '" fill="#ffe600" stroke="#000" stroke-width="1.5"/>' +
+      '<circle cx="' + fx + '" cy="' + fy + '" r="3" fill="#ffe600" stroke="#000" stroke-width="1"/></g>';
+    if (c.note) o += '<text x="' + (fx + 19) + '" y="' + (fy - 12) + '" font-size="12" fill="#ffe600" stroke="#000" stroke-width="3" paint-order="stroke">' + esc(c.note) + '</text>';
+  });
   $('gDrawn').innerHTML = o;
   var el = $('drawStats'), gen = r.covered ? r.covered.length : 0, tot = r.nodes ? r.nodes.length : 0;
   var s = 'Generated: ' + Math.round(r.len) + ' yd, covered ' + gen + '/' + tot;
@@ -277,7 +296,8 @@ function renderHead() {
   var sd = { A: 'Alliance', H: 'Horde', C: 'Both' }[r.side] || r.side;
   h.innerHTML = '<h1>' + esc(r.zone) + ' - ' + esc(r.kind) + ' ' + r.from + '-' + r.to + (r.guide ? ' (guide)' : '') + '</h1>' +
     p('side', sd) + p('len', r.len + ' yd') + p('share', r.share) + p('stops', r.stops) + p('crossings', r.crossings) +
-    p('overlap', r.overlap) + p('maxhop', r.maxhop) + p('check', r.check);
+    p('overlap', r.overlap) + p('maxhop', r.maxhop) + p('check', r.check) +
+    (r.manual ? '<br><span class="pill" style="background:#1d5a28">Manual route' + (r.note ? ' (' + esc(r.note) + ')' : '') + '</span>' : '');
 }
 function renderPanel() {
   var r = S.cur; if (!r) return;
@@ -291,14 +311,55 @@ function renderPanel() {
   $('tags').innerHTML = o;
   $('bDraw').className = S.draw ? 'on' : '';
   $('bDraw').textContent = S.draw ? 'Drawing... (click to stop)' : 'Draw revised route';
-  $('svg').style.cursor = S.draw ? 'crosshair' : 'default';
+  $('svg').style.cursor = (S.draw || S.avMode || S.chMode) ? 'crosshair' : 'default';
+  $('bCheck').className = S.chMode ? 'on' : '';
+  var bn = $('banner');
+  if (S.avMode) { bn.style.display = 'block'; bn.style.background = 'rgba(200,30,30,.85)'; bn.style.color = '#fff'; bn.textContent = 'AVOID AREA: drag to draw a circle (click = 120 yd), right-click deletes, Esc to leave'; }
+  else if (S.draw) { bn.style.display = 'block'; bn.style.background = 'rgba(0,160,190,.85)'; bn.style.color = '#fff'; bn.textContent = 'DRAW ROUTE: click adds a point, drag moves, Alt+click / right-click edits, Esc to leave'; }
+  else if (S.chMode) { bn.style.display = 'block'; bn.style.background = 'rgba(255,220,0,.9)'; bn.style.color = '#000'; bn.textContent = 'CHECK PLEASE: click to drop a flag, right-click a flag removes it, Esc to leave'; }
+  else bn.style.display = 'none';
+  $('bAvoid').className = S.avMode ? 'on' : '';
+  $('bAvoid').textContent = S.avMode ? 'Avoiding... (drag circle, right-click deletes)' : 'Avoid area';
 }
+// ---------- avoid areas (per map) ----------
+function mapCircles() { return S.cur ? (S.avoid[String(S.cur.map)] || []) : []; }
+function circleRad(r, c) { return { rx: X(c.r / r.yards[0] * 100), ry: Y(c.r / r.yards[1] * 100) }; }
+function renderAvoid(preview) {
+  var r = S.cur, o = '';
+  if (r) {
+    mapCircles().forEach(function (c) {
+      var q = circleRad(r, c);
+      o += '<ellipse cx="' + X(c.x) + '" cy="' + Y(c.y) + '" rx="' + q.rx + '" ry="' + q.ry + '" fill="url(#hatch)" stroke="#f33" stroke-width="2"><title>' + esc(c.r + ' yd ' + (c.note || '')) + '</title></ellipse>';
+      if (c.note) o += '<text x="' + X(c.x) + '" y="' + Y(c.y) + '" text-anchor="middle" font-size="12" fill="#fff" stroke="#000" stroke-width="3" paint-order="stroke">' + esc(c.note) + '</text>';
+    });
+    if (preview) {
+      var q2 = circleRad(r, preview);
+      o += '<ellipse cx="' + X(preview.x) + '" cy="' + Y(preview.y) + '" rx="' + q2.rx + '" ry="' + q2.ry + '" fill="rgba(255,0,0,.2)" stroke="#f66" stroke-width="2" stroke-dasharray="6 4"/>' +
+           '<text x="' + X(preview.x) + '" y="' + (Y(preview.y) - 6) + '" text-anchor="middle" font-size="14" fill="#fff" stroke="#000" stroke-width="3" paint-order="stroke">' + Math.round(preview.r) + ' yd</text>';
+    }
+  }
+  $('gAvoid').innerHTML = o;
+}
+function saveAvoid() {
+  if (!S.cur) return;
+  var map = S.cur.map;
+  setStatus('saving avoid areas...');
+  fetch('/avoid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ map: map, circles: S.avoid[String(map)] || [] }) })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); setStatus('avoid areas saved'); })
+    .catch(function () { setStatus('AVOID SAVE FAILED'); });
+}
+function yardsBetween(r, a, b) {
+  var dx = (a[0] - b[0]) * r.yards[0] / 100, dy = (a[1] - b[1]) * r.yards[1] / 100;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+var avDrag = null;
 function filtered() {
   return S.routes.filter(function (r) {
     if (S.fKind && r.kind !== S.fKind) return false;
     if (S.fFac === 'A' && r.side === 'H') return false;
     if (S.fFac === 'H' && r.side === 'A') return false;
     if (S.fOnly && !hasNote(r.id)) return false;
+    if (S.fChk && !hasChecks(r.id)) return false;
     return true;
   });
 }
@@ -321,7 +382,8 @@ function renderList() {
         '<span class="zone">' + esc(r.zone) + '</span><span class="side s' + esc(r.side) + '">' + esc(r.side) + '</span>' +
         '<span class="chk">' + (typeof r.check === 'number' ? r.check.toFixed(2) : esc(r.check)) + '</span>' +
         (hasNote(r.id) ? '<span class="mk mkn" title="has notes">N</span>' : '') +
-        (hasDrawn(r.id) ? '<span class="mk mkd" title="has drawn route">D</span>' : '') + '</div>';
+        (hasDrawn(r.id) ? '<span class="mk mkd" title="has drawn route">D</span>' : '') +
+        (hasChecks(r.id) ? '<span class="mk mkc" title="has check flags">!</span>' : '') + '</div>';
     });
   });
   $('list').innerHTML = o || '<div class="hint" style="padding:8px">No routes match.</div>';
@@ -329,7 +391,7 @@ function renderList() {
 function selectRoute(id) {
   S.cur = byId(id);
   if (S.cur) { $('img').setAttribute('href', 'https://wow.zamimg.com/images/wow/classicplus/maps/enus/original/' + S.cur.area + '.jpg'); }
-  renderHead(); renderStatic(); renderDrawn(); renderPanel(); renderList();
+  renderHead(); renderStatic(); renderAvoid(); renderDrawn(); renderPanel(); renderList();
   var sel = document.querySelector('.row.sel'); if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
 }
 function step(d) {
@@ -389,6 +451,11 @@ function wireMap() {
   });
   svg.addEventListener('mousedown', function (e) {
     S.sup = false;
+    if (S.avMode && S.cur && e.button === 0) {
+      var ap = pos(e); e.preventDefault();
+      avDrag = { x: ap[0], y: ap[1], r: 0 };
+      return;
+    }
     if (!S.draw || !S.cur || e.button !== 0) return;
     var i = nearPoint(pos(e));
     if (i < 0) return;
@@ -397,6 +464,11 @@ function wireMap() {
     drag = { i: i, moved: false };
   });
   window.addEventListener('mousemove', function (e) {
+    if (avDrag) {
+      avDrag.r = yardsBetween(S.cur, [avDrag.x, avDrag.y], pos(e));
+      renderAvoid(avDrag);
+      return;
+    }
     if (!drag) return;
     var p = pos(e);
     var pts = curPts(), cur = pts[drag.i];
@@ -404,14 +476,33 @@ function wireMap() {
     pts[drag.i] = p; renderDrawn();
   });
   window.addEventListener('mouseup', function () {
+    if (avDrag) {
+      var d = avDrag; avDrag = null; S.sup = true;
+      if (d.r < 15) d.r = 120;
+      if (S.cur) {
+        var note = window.prompt('Note for this avoid area (optional, Cancel = no note):', '');
+        var key = String(S.cur.map);
+        (S.avoid[key] = S.avoid[key] || []).push({ x: d.x, y: d.y, r: Math.round(d.r), note: note ? note.trim() : '' });
+        saveAvoid();
+      }
+      renderAvoid();
+      return;
+    }
     if (!drag) return;
     var m = drag.moved; drag = null;
     if (m) drawnChanged();
   });
   svg.addEventListener('click', function (e) {
     if (S.sup) { S.sup = false; return; }
-    if (!S.cur) return;
+    if (!S.cur || S.avMode) return;
     var p = pos(e);
+    if (S.chMode) {
+      var note = window.prompt('Note for this check flag (optional):', '');
+      if (note === null) return;
+      ensureNote(S.cur.id).checks.push({ x: p[0], y: p[1], note: note.trim() });
+      markDirty(S.cur.id); renderDrawn(); renderList();
+      return;
+    }
     if (S.draw) {
       if (nearPoint(p) >= 0) return;
       if (e.altKey) insertPoint(p); else addPoint(p);
@@ -423,6 +514,23 @@ function wireMap() {
     }
   });
   svg.addEventListener('contextmenu', function (e) {
+    if (S.avMode && S.cur) {
+      e.preventDefault();
+      var q = pos(e), list = mapCircles(), best = -1, bd = Infinity;
+      list.forEach(function (c, i) {
+        var d = yardsBetween(S.cur, q, [c.x, c.y]);
+        if (d <= c.r && c.r < bd) { bd = c.r; best = i; }
+      });
+      if (best >= 0) { list.splice(best, 1); renderAvoid(); saveAvoid(); }
+      return;
+    }
+    if (S.chMode && S.cur) {
+      e.preventDefault();
+      var cq = pos(e), cl = ensureNote(S.cur.id).checks, cb = -1, cd = tolPct() * 2;
+      cl.forEach(function (c, i) { var d = pxd(cq, [c.x, c.y]) / W * 100; if (d <= cd) { cd = d; cb = i; } });
+      if (cb >= 0) { cl.splice(cb, 1); markDirty(S.cur.id); renderDrawn(); renderList(); }
+      return;
+    }
     if (!S.draw || !S.cur) return;
     e.preventDefault();
     var p = pos(e), i = nearPoint(p);
@@ -466,7 +574,18 @@ function init() {
     if (!S.cur) return;
     ensureNote(S.cur.id).text = this.value; markDirty(S.cur.id); renderList();
   });
-  $('bDraw').onclick = function () { S.draw = !S.draw; renderPanel(); renderStatic(); renderDrawn(); };
+  function setMode(m) {
+    S.draw = (m === 'draw'); S.avMode = (m === 'avoid'); S.chMode = (m === 'check');
+    renderPanel(); renderStatic(); renderDrawn();
+  }
+  function toggleMode(m) {
+    var on = (m === 'draw' && S.draw) || (m === 'avoid' && S.avMode) || (m === 'check' && S.chMode);
+    setMode(on ? '' : m);
+  }
+  $('bDraw').onclick = function () { toggleMode('draw'); };
+  $('bAvoid').onclick = function () { toggleMode('avoid'); };
+  $('bCheck').onclick = function () { toggleMode('check'); };
+  $('fChk').onchange = function () { S.fChk = this.checked; renderList(); };
   $('bUndo').onclick = function () {
     if (!S.cur) return; var st = S.undo[S.cur.id];
     if (!st || !st.length) return;
@@ -483,11 +602,16 @@ function init() {
   };
   document.addEventListener('keydown', function (e) {
     var tag = (e.target.tagName || '').toLowerCase();
-    if (tag === 'textarea' || tag === 'input' || tag === 'select') {
+    if (tag === 'textarea' || tag === 'select' || (tag === 'input' && e.target.type !== 'checkbox')) {
       if (e.key === 'Escape') e.target.blur();
       return;
     }
     if (e.ctrlKey || e.altKey || e.metaKey) return;
+    var kk = e.key.toLowerCase();
+    if (kk === 'a') { toggleMode('avoid'); return; }
+    if (kk === 'd') { toggleMode('draw'); return; }
+    if (kk === 'c') { toggleMode('check'); return; }
+    if (e.key === 'Escape') { setMode(''); return; }
     if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
     else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
     else if (e.key === 'n' || e.key === 'N') { $('notes').focus(); e.preventDefault(); }
@@ -498,8 +622,9 @@ function init() {
   var pReview = getJSON('review.json').catch(function () { return getJSON('sample-review.json'); });
   var pNotes = getJSON('/notes').catch(function () { return {}; });
   var pTowns = fetch('/data/towns.csv').then(function (r) { return r.ok ? r.text() : ''; }).then(parseCSV).catch(function () { return []; });
-  Promise.all([pReview, pNotes, pTowns]).then(function (v) {
-    S.routes = v[0].routes || []; S.notes = normalizeLoaded(v[1]); S.towns = v[2];
+  var pAvoid = getJSON('/avoid').catch(function () { return {}; });
+  Promise.all([pReview, pNotes, pTowns, pAvoid]).then(function (v) {
+    S.routes = v[0].routes || []; S.notes = normalizeLoaded(v[1]); S.towns = v[2]; S.avoid = v[3] || {};
     renderList();
     if (order.length) selectRoute(order[0]); else { renderHead(); }
     setStatus('loaded' + (v[0].generated ? ' (' + v[0].generated + ')' : ''));

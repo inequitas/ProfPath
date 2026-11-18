@@ -127,14 +127,18 @@ local BANDS = {
 }
 
 local MAXZONES = 5
-local MAXNODES = 150
+local MAXNODES = 250
 local DEDUPE = 0.4 -- map units
 local R = 120                      -- yards: the route must pass within R of every covered node
-local HOP_YARDS = { 250, 300, 350 } -- max hop between linked nodes/stops, tried in order
-local SIMPLIFY = 15                -- yards: Douglas-Peucker tolerance (also the extra slack for coverage checks)
+local HOP_YARDS = { 180, 220, 260 } -- max hop between linked nodes/stops, tried in order
+local MAX_SEG = 120                 -- yards: Douglas-Peucker never merges points into a segment longer than this
+local CHAIKIN_PASSES = 1
+local TOWN_RADIUS = 250             -- yards around a hostile town that is excluded
+local SIMPLIFY = 8                -- yards: Douglas-Peucker tolerance (also the extra slack for coverage checks)
 local STOP_HOP_EXTRA = 120         -- yards added to the hop limit between stops (stops are offset from nodes by up to R)
-local UIMAPASSIGNMENT = os.getenv("PROFPATH_UIMAPASSIGNMENT")
-    or "tools/data/UiMapAssignment.csv"
+local SPUR_YD_PER_NODE = 90          -- prune a stop when it saves more than this many yards per node it alone covers
+local MIN_COVER = 0.85                 -- ...as long as at least this share of the region's nodes stays covered
+local UIMAPASSIGNMENT = os.getenv("PROFPATH_UIMAPASSIGNMENT") or (ROOT .. "/tools/data/UiMapAssignment.csv")
 
 ---------------------------------------------------------------- Load data
 local zones = {}
@@ -280,7 +284,8 @@ local function douglas(line, tol) -- open polyline
             local d = segDist(line[k], line[i], line[j])
             if d > md then md, mi = d, k end
         end
-        if mi and md > tol then keep[mi] = true; rec(i, mi); rec(mi, j) end
+        if not mi and j - i > 1 and dist(line[i], line[j]) > MAX_SEG then mi = (i + j) // 2; md = math.huge end
+        if mi and (md > tol or dist(line[i], line[j]) > MAX_SEG) and j - i > 1 then keep[mi] = true; rec(i, mi); rec(mi, j) end
     end
     rec(1, n)
     local out = {}
@@ -407,7 +412,12 @@ local function untangle(poly0, limit)
 end
 
 -- pts: nodes in map percent; W,H: zone size in yards
-local function buildRoute(pts, W, H)
+local function inCircles(circles, p)
+    for _, c in ipairs(circles or {}) do if dist(p, c) <= c.r then return true end end
+    return false
+end
+
+local function buildRoute(pts, W, H, circles)
     local n = #pts
     if n == 0 then return nil end
     local Q = {}
@@ -454,7 +464,8 @@ local function buildRoute(pts, W, H)
     for i = 1, m do
         for j = i + 1, m do
             if dist(N[i], N[j]) <= 2 * R then
-                cands[#cands + 1] = { (N[i][1] + N[j][1]) / 2, (N[i][2] + N[j][2]) / 2 }
+                local mid = { (N[i][1] + N[j][1]) / 2, (N[i][2] + N[j][2]) / 2 }
+                if not inCircles(circles, mid) then cands[#cands + 1] = mid end
             end
         end
     end
@@ -501,7 +512,11 @@ local function buildRoute(pts, W, H)
         for j = i + 1, nV do
             local d = dist(V[i], V[j])
             if d <= D then
-                gadj[i][#gadj[i] + 1] = { j, d }; gadj[j][#gadj[j] + 1] = { i, d }
+                local w = d
+                for _, c in ipairs(circles or {}) do
+                    if segDist(c, V[i], V[j]) < c.r then w = d * 10; break end
+                end
+                gadj[i][#gadj[i] + 1] = { j, w }; gadj[j][#gadj[j] + 1] = { i, w }
             end
         end
     end
@@ -531,15 +546,8 @@ local function buildRoute(pts, W, H)
         for i = 1, #t do c = c + G(t[i], t[i % #t + 1]) end
         return c
     end
-    local function solve(start)
-        local tour, used = { start }, { [start] = true }
-        for _ = 2, ns_ do
-            local cur, bj, bd = tour[#tour], nil, math.huge
-            for j = 1, ns_ do
-                if not used[j] and G(cur, j) < bd then bd, bj = G(cur, j), j end
-            end
-            tour[#tour + 1] = bj; used[bj] = true
-        end
+    local function improve(tour)
+        local ns_ = #tour
         if ns_ >= 4 then
             local improved, iter = true, 0
             while improved and iter < 100 do
@@ -582,6 +590,17 @@ local function buildRoute(pts, W, H)
         end
         return tour
     end
+    local function solve(start)
+        local tour, used = { start }, { [start] = true }
+        for _ = 2, ns_ do
+            local cur, bj, bd = tour[#tour], nil, math.huge
+            for j = 1, ns_ do
+                if not used[j] and G(cur, j) < bd then bd, bj = G(cur, j), j end
+            end
+            tour[#tour + 1] = bj; used[bj] = true
+        end
+        return improve(tour)
+    end
     local starts, seenStart = {}, {}
     for _, s in ipairs { 1, ns_ // 4 + 1, ns_ // 2 + 1, (3 * ns_) // 4 + 1, ns_ } do
         if not seenStart[s] then seenStart[s] = true; starts[#starts + 1] = s end
@@ -593,10 +612,48 @@ local function buildRoute(pts, W, H)
         if not tourBest or c < tourBest then tour, tourBest = t, c end
     end
 
+    -- spur pruning: drop stops that cost many yards for few uniquely covered nodes
+    local preLen, preStops = tourBest, #tour
+    local stopCover = {}
+    for k = 1, ns_ do
+        stopCover[k] = {}
+        for i = 1, m do if dist(S[k], N[i]) <= R then table.insert(stopCover[k], i) end end
+    end
+    local cnt, covered = {}, 0
+    for i = 1, m do cnt[i] = 0 end
+    for _, k in ipairs(tour) do for _, i in ipairs(stopCover[k]) do cnt[i] = cnt[i] + 1 end end
+    for i = 1, m do if cnt[i] > 0 then covered = covered + 1 end end
+    local pruned = false
+    while #tour > 3 and not os.getenv("PROFPATH_NOPRUNE") do
+        local bestPos, bestRatio, bestLost
+        for pos = 1, #tour do
+            local t = tour[pos]
+            local prv, nxt = tour[(pos - 2) % #tour + 1], tour[pos % #tour + 1]
+            local lost = 0
+            for _, i in ipairs(stopCover[t]) do if cnt[i] == 1 then lost = lost + 1 end end
+            local saved = G(prv, t) + G(t, nxt) - G(prv, nxt)
+            local ratio = lost == 0 and math.huge or saved / lost
+            if (lost == 0 or (ratio > SPUR_YD_PER_NODE and covered - lost >= MIN_COVER * m)) and (not bestRatio or ratio > bestRatio) then
+                bestPos, bestRatio, bestLost = pos, ratio, lost
+            end
+        end
+        if not bestPos then break end
+        local t = table.remove(tour, bestPos)
+        for _, i in ipairs(stopCover[t]) do cnt[i] = cnt[i] - 1 end
+        covered = covered - bestLost
+        pruned = true
+    end
+    if pruned then tour = improve(tour) end
+    local postLen = tourCost(tour)
+    local Ncov, tourStops = {}, {}
+    for i = 1, m do if cnt[i] > 0 then Ncov[#Ncov + 1] = N[i] end end
+    for _, k in ipairs(tour) do tourStops[#tourStops + 1] = S[k] end
+    local nt = #tour
+
     -- expand every hop into its graph path
     local raw = { S[tour[1]] }
-    for i = 1, ns_ do
-        local a, b = tour[i], tour[i % ns_ + 1]
+    for i = 1, nt do
+        local a, b = tour[i], tour[i % nt + 1]
         local path, v = {}, nv + b
         while v and v ~= nv + a do table.insert(path, 1, V[v]); v = PREV[a][v] end
         for _, p in ipairs(path) do
@@ -609,17 +666,17 @@ local function buildRoute(pts, W, H)
     local line = untangle(raw, D)
     local maxseg = 0
     local final
-    for iters = 2, 0, -1 do
+    for iters = CHAIKIN_PASSES, 0, -1 do
         local l = line
         for _ = 1, iters do l = chaikin(l, true) end
         l = simplify(l, true, SIMPLIFY)
-        if covers(l, true, N, R + SIMPLIFY) then final = l; break end
+        if covers(l, true, Ncov, R + SIMPLIFY) then final = l; break end
     end
     do
         local ms = 0
         for i = 1, #final do ms = math.max(ms, dist(final[i], final[i % #final + 1])) end
         local again = untangle(final, math.max(D, ms))
-        if covers(again, true, N, R + SIMPLIFY) then final = again end
+        if covers(again, true, Ncov, R + SIMPLIFY) then final = again end
     end
     local met = metrics(final)
     local flat = {}
@@ -627,11 +684,83 @@ local function buildRoute(pts, W, H)
         flat[#flat + 1] = string.format("%.1f", p[1] / W * 100)
         flat[#flat + 1] = string.format("%.1f", p[2] / H * 100)
     end
-    return { flat = flat, D = D, stops = ns_, share = m / n, open = false, maxhop = met.maxseg,
-        len = met.len, pts = #final, crossings = met.crossings, overlap = met.overlap, stopsY = S, polyY = final }
+    return { flat = flat, D = D, stops = nt, share = covered / n, open = false, maxhop = met.maxseg, preLen = preLen, postLen = postLen, preCov = m, postCov = covered, preStops = preStops, region = m,
+        len = met.len, pts = #final, crossings = met.crossings, overlap = met.overlap, stopsY = tourStops, polyY = final }
 end
 
 ---------------------------------------------------------------- Build
+local overrides = {}
+do
+    local fh = io.open(ROOT .. "/tools/data/route-overrides.json", "rb")
+    if fh then
+        local txt = fh:read("a"); fh:close()
+        txt = txt:gsub("^\239\187\191", "")
+        overrides = parse_json(txt)
+    end
+end
+local function applyOverride(gen, ov, pts, W, H)
+    local poly, flat = {}, {}
+    for i = 1, #ov.route - 1, 2 do poly[#poly + 1] = { ov.route[i] * W / 100, ov.route[i + 1] * H / 100 } end
+    if #poly > 1 and dist(poly[1], poly[#poly]) < 1 then poly[#poly] = nil end
+    for _, p in ipairs(poly) do
+        flat[#flat + 1] = string.format("%.1f", p[1] / W * 100)
+        flat[#flat + 1] = string.format("%.1f", p[2] / H * 100)
+    end
+    local met = metrics(poly)
+    local cov = 0
+    for _, p in ipairs(pts) do
+        local py, best = { p[1] * W / 100, p[2] * H / 100 }, math.huge
+        for k = 1, #poly do best = math.min(best, segDist(py, poly[k], poly[k % #poly + 1])) end
+        if best <= R then cov = cov + 1 end
+    end
+    return { flat = flat, D = gen.D, stops = #poly, share = cov / #pts, open = false, maxhop = met.maxseg, len = met.len,
+        crossings = met.crossings, overlap = met.overlap, stopsY = {}, polyY = poly, manual = true, note = ov.note }
+end
+local towns, avoid = {}, {}
+do
+    local fh = io.open(ROOT .. "/tools/data/towns.csv", "rb")
+    if fh then
+        local first = true
+        for line in fh:lines() do
+            if first then first = false else
+                local um, x, y, sd, nm = line:gsub("\r", ""):match("^(%d+),([%d.]+),([%d.]+),(%a),(.*)$")
+                if um then
+                    um = tonumber(um)
+                    towns[um] = towns[um] or {}
+                    table.insert(towns[um], { tonumber(x), tonumber(y), sd, (nm:gsub('^"', ""):gsub('"$', "")) })
+                end
+            end
+        end
+        fh:close()
+    end
+    local ah = io.open(ROOT .. "/tools/data/route-avoid.json", "rb")
+    if ah then
+        local txt = ah:read("a"); ah:close()
+        avoid = parse_json((txt:gsub("^\239\187\191", ""))) or {}
+    end
+end
+-- circles (yards) to keep out of in a zone: hostile towns and avoid areas
+local circleCache = {}
+local function zoneCircles(area)
+    if circleCache[area] then return circleCache[area] end
+    local z = zones[area]
+    local sz = size[z.map]
+    local res = { town = {}, avoid = {} }
+    for _, t in ipairs(towns[z.map] or {}) do
+        local hostile = (z.side == "A" and t[3] == "H") or (z.side == "H" and t[3] == "A")
+            or (z.side == "C" and (t[3] == "A" or t[3] == "H"))
+        if hostile then res.town[#res.town + 1] = { t[1] * sz[1] / 100, t[2] * sz[2] / 100, r = TOWN_RADIUS, name = t[4] } end
+    end
+    for _, a in ipairs(avoid[tostring(z.map)] or {}) do
+        res.avoid[#res.avoid + 1] = { a.x * sz[1] / 100, a.y * sz[2] / 100, r = a.r, note = a.note }
+    end
+    res.all = {}
+    for _, c in ipairs(res.town) do res.all[#res.all + 1] = c end
+    for _, c in ipairs(res.avoid) do res.all[#res.all + 1] = c end
+    circleCache[area] = res
+    return res
+end
+
 local function usefulPoints(prof, area, s)
     local pts = {}
     for name, req in pairs(SKILL[prof]) do
@@ -641,7 +770,17 @@ local function usefulPoints(prof, area, s)
         end
     end
     table.sort(pts, function(a, b) if a[1] ~= b[1] then return a[1] < b[1] end return a[2] < b[2] end)
-    return dedupe(pts)
+    pts = dedupe(pts)
+    local zc = zoneCircles(area)
+    local sz = size[zones[area].map]
+    local keep, et, ea = {}, 0, 0
+    for _, p in ipairs(pts) do
+        local py = { p[1] * sz[1] / 100, p[2] * sz[2] / 100 }
+        if inCircles(zc.town, py) then et = et + 1
+        elseif inCircles(zc.avoid, py) then ea = ea + 1
+        else keep[#keep + 1] = p end
+    end
+    return keep, et, ea
 end
 
 local unmatched = {}
@@ -668,7 +807,7 @@ local function pickZones(prof, band)
         seen[area] = true
         local c = { area = area, guide = isGuide }
         if gathering then
-            c.pts = usefulPoints(prof, area, from); c.nodes = #c.pts
+            c.pts, c.et, c.ea = usefulPoints(prof, area, from); c.nodes = #c.pts
         end
         cand[#cand + 1] = c
     end
@@ -685,8 +824,8 @@ local function pickZones(prof, band)
         local others = {}
         for area in pairs(zones) do
             if not seen[area] then
-                local pts = usefulPoints(prof, area, from)
-                if #pts > 0 then others[#others + 1] = { area = area, pts = pts, nodes = #pts } end
+                local pts, et, ea = usefulPoints(prof, area, from)
+                if #pts > 0 then others[#others + 1] = { area = area, pts = pts, nodes = #pts, et = et, ea = ea } end
             end
         end
         table.sort(others, function(a, b) if a.nodes ~= b.nodes then return a.nodes > b.nodes end return a.area < b.area end)
@@ -721,8 +860,13 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
             local z = zones[c.area]
             if SKILL[prof] then
                 local sz = assert(size[z.map], 'no yard size for uiMap ' .. z.map)
-                local r = buildRoute(c.pts, sz[1], sz[2])
-                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,", r.share, r.stops, math.floor(r.len + 0.5)) .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
+                local r = buildRoute(c.pts, sz[1], sz[2], zoneCircles(c.area).all)
+                local gen = r
+                if r then
+                    local ov = overrides[string.format("%s:%d-%d:%d", prof, from, to, c.area)]
+                    if ov then r = applyOverride(gen, ov, c.pts, sz[1], sz[2]) end
+                end
+                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "") .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
                 out[#out + 1] = string.format('        { area = %d, map = %d, side = "%s", nodes = %d, guide = %s,%s },',
                     c.area, z.map, z.side, c.nodes, tostring(c.guide and true or false), rs)
                 if r then
@@ -739,11 +883,12 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                         end
                         local st = {}
                         for _, p in ipairs(r.stopsY) do st[#st + 1] = r1(p[1] / W * 100); st[#st + 1] = r1(p[2] / H * 100) end
-                        reviewRoutes[#reviewRoutes + 1] = { rec = r, W = W, H = H, nd = nd, cov = cov, st = st, prof = prof, from = from, to = to,
-                            id = string.format("%s-%d-%d", prof, bi, zi), z = z, guide = c.guide and true or false, nodes = c.nodes }
+                        reviewRoutes[#reviewRoutes + 1] = { rec = r, gen = gen, W = W, H = H, nd = nd, cov = cov, st = st, prof = prof, from = from, to = to,
+                            id = string.format("%s-%d-%d", prof, bi, zi), et = c.et or 0, ea = c.ea or 0, z = z, guide = c.guide and true or false, nodes = c.nodes }
                     end
                     local check = r.crossings * 3 + r.overlap * 10 + (r.maxhop > 300 and 2 or 0) + (r.share < 0.3 and 1 or 0)
-                    metricRows[#metricRows + 1] = { check = check, text = string.format("%-9s %3d-%-3d %-22s len=%5d share=%.2f stops=%2d cross=%d overlap=%.2f maxhop=%3d check=%.1f", prof, from, to, z.name, math.floor(r.len + 0.5), r.share, r.stops, r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check), crossings = r.crossings }
+                    local pruneStr = string.format("stops %d->%d tourLen %d->%d cov %d->%d of %d", gen.preStops or 0, gen.stops, math.floor((gen.preLen or 0) + 0.5), math.floor((gen.postLen or 0) + 0.5), gen.preCov or 0, gen.postCov or 0, gen.region or 0)
+                    metricRows[#metricRows + 1] = { check = check, text = string.format("%-9s %3d-%-3d %-22s len=%5d share=%.2f stops=%2d cross=%d overlap=%.2f maxhop=%3d check=%.1f  [prune %s] excl=%d/%d", prof, from, to, z.name, math.floor(r.len + 0.5), r.share, r.stops, r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check, pruneStr, c.et or 0, c.ea or 0), crossings = r.crossings }
                     if r.maxhop > globalMax then globalMax = r.maxhop end
                 end
                 line[#line + 1] = string.format("%s%s[%s] n=%d%s", z.name, c.guide and "*" or "", z.side, c.nodes,
@@ -773,10 +918,10 @@ do
     for _, e in ipairs(reviewRoutes) do
         local r = e.rec
         local check = r.crossings * 3 + r.overlap * 10 + (r.maxhop > 300 and 2 or 0) + (r.share < 0.3 and 1 or 0)
-        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"route":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
+        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"excluded":[%d,%d],"manual":%s,"note":%q,"route":[%s],"generated":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
             e.id, e.prof, e.from, e.to, e.z.area, e.z.map, e.z.name, e.z.side, tostring(e.guide), math.floor(r.len + 0.5), r.share, r.stops,
             r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check, r.D, R, math.floor(e.W + 0.5), math.floor(e.H + 0.5),
-            table.concat(r.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
+            e.et, e.ea, tostring(r.manual and true or false), r.note or "", table.concat(r.flat, ","), table.concat(e.gen.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
     end
     os.execute('mkdir "' .. (ROOT .. "/tools/review"):gsub("/", "\\") .. '" 2>nul')
     local rf = assert(io.open(ROOT .. "/tools/review/review.json", "wb"))

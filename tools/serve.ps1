@@ -40,7 +40,8 @@ while ($l.IsListening) {
                     }
                     if (-not $all) { $all = New-Object PSObject }
                     $dr = @(); if ($null -ne $n.drawn) { $dr = @($n.drawn) }
-                    $entry = [pscustomobject]@{ id = [string]$n.id; tags = @($n.tags); text = [string]$n.text; drawn = $dr; updated = $n.updated }
+                    $ck = @(); if ($null -ne $n.checks) { foreach ($c in @($n.checks)) { if ($null -ne $c) { $ck += [pscustomobject]@{ x = $c.x; y = $c.y; note = [string]$c.note } } } }
+                    $entry = [pscustomobject]@{ id = [string]$n.id; tags = @($n.tags); text = [string]$n.text; drawn = $dr; checks = $ck; updated = $n.updated }
                     $all | Add-Member -NotePropertyName ([string]$n.id) -NotePropertyValue $entry -Force
                     $json = ConvertTo-Json -InputObject $all -Depth 6
                     [System.IO.File]::WriteAllText($notesFile, $json, $utf8)
@@ -50,6 +51,38 @@ while ($l.IsListening) {
                 $txt = '{}'
                 if (Test-Path $notesFile -PathType Leaf) {
                     $t = [System.IO.File]::ReadAllText($notesFile, $utf8)
+                    if ($t.Trim()) { $txt = $t }
+                }
+                SendText $ctx 200 'application/json; charset=utf-8' $txt
+            }
+        } elseif ($urlPath -eq '/avoid') {
+            $avoidFile = [System.IO.Path]::GetFullPath((Join-Path $Root '..\data\route-avoid.json'))
+            if ($req.HttpMethod -eq 'POST') {
+                $sr = New-Object System.IO.StreamReader($req.InputStream, $utf8)
+                $body = $sr.ReadToEnd(); $sr.Close()
+                $n = $body | ConvertFrom-Json
+                if ($null -eq $n.map) { SendText $ctx 400 'application/json' '{"ok":false,"error":"missing map"}' }
+                else {
+                    $all = $null
+                    if (Test-Path $avoidFile -PathType Leaf) {
+                        $raw = [System.IO.File]::ReadAllText($avoidFile, $utf8)
+                        if ($raw.Trim()) { $all = $raw | ConvertFrom-Json }
+                    }
+                    if (-not $all) { $all = New-Object PSObject }
+                    $list = @()
+                    foreach ($c in @($n.circles)) {
+                        if ($null -eq $c) { continue }
+                        $list += [pscustomobject]@{ x = [math]::Round([double]$c.x, 1); y = [math]::Round([double]$c.y, 1); r = [int][math]::Round([double]$c.r); note = [string]$c.note }
+                    }
+                    $all | Add-Member -NotePropertyName ([string]$n.map) -NotePropertyValue $list -Force
+                    $json = ConvertTo-Json -InputObject $all -Depth 6
+                    [System.IO.File]::WriteAllText($avoidFile, $json, $utf8)
+                    SendText $ctx 200 'application/json' '{"ok":true}'
+                }
+            } else {
+                $txt = '{}'
+                if (Test-Path $avoidFile -PathType Leaf) {
+                    $t = [System.IO.File]::ReadAllText($avoidFile, $utf8)
                     if ($t.Trim()) { $txt = $t }
                 }
                 SendText $ctx 200 'application/json; charset=utf-8' $txt
