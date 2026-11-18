@@ -488,6 +488,8 @@ SlashCmdList.PROFPATH = function(msg)
         opt.effort = math.max(0, math.floor(tonumber(arg)))
         chat(("effort = %d copper per craft (higher = fewer crafts, even if it costs a bit more gold)"):format(opt.effort))
         ns.requestRecalc()
+    elseif cmd == "route" and ns.Map and ns.Map.slash(arg) then
+        -- handled: /pp route off | show
     elseif cmd == "gather" and (arg == "on" or arg == "off") then
         opt.gather = arg == "on"
         chat("gather materials nobody sells yourself (ore, herbs, leather): " .. arg); ns.requestRecalc()

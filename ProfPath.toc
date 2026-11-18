@@ -13,12 +13,15 @@
 
 Data\Recipes.lua
 Data\Gather.lua
+Data\Zones.lua
+Data\Routes.lua
 Data\Trainers.lua
 Optimizer.lua
 Prices.lua
 Capture.lua
 Recipes.lua
 UI.lua
+Map.lua
 Core.lua
 Track.lua
 Minimap.lua

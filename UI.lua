@@ -611,6 +611,51 @@ local function gatherKind(prof)
     return G and prof.skillLine and G.lines[prof.skillLine] or nil
 end
 
+-- Zones for your skill band and faction (Wowhead's Forever guides plus node counts), each with a
+-- button that draws its gathering loop on the world map and minimap.
+local function zoneList(prof, kind)
+    local bands = ns.Routes and ns.Routes[kind]
+    if not bands or #bands == 0 then return end
+    local rank = prof.rank or 0
+    local band = bands[#bands]
+    for _, b in ipairs(bands) do if rank >= b.from and rank < b.to then band = b; break end end
+    local side = UnitFactionGroup and UnitFactionGroup("player")
+    side = side == "Alliance" and "A" or side == "Horde" and "H" or nil
+    local label = ns.Gather.label[kind] or kind
+    text("GameFontNormal", 4, y, CONTENT - 8, ("Where to go for %d-%d"):format(band.from, band.to))
+    y = y + 20
+    local active = ns.Map and ns.Map.active and ns.Map.active()
+    local shown = 0
+    for _, z in ipairs(band.zones) do
+        if shown < 4 and (z.side == "C" or not side or z.side == side) then
+            shown = shown + 1
+            local zone = ns.Zones and ns.Zones[z.area]
+            local name = zone and zone[2] or ("zone " .. z.area)
+            local bits = {}
+            if z.nodes then bits[#bits + 1] = z.nodes .. " nodes" end
+            if z.share and z.share < 0.95 then bits[#bits + 1] = ("route covers %d%%"):format(math.floor(z.share * 100 + 0.5)) end
+            if z.guide then bits[#bits + 1] = "Wowhead pick" end
+            if z.side == "C" then bits[#bits + 1] = "contested" end
+            text("GameFontHighlight", 10, y + 4, CONTENT - 150, name .. "  |cff888888" .. table.concat(bits, "  -  ") .. "|r")
+            if z.route and ns.Map then
+                local isActive = active and active.map == z.map
+                button(isActive and "Hide route" or "Show route", CONTENT - 134, 128, function()
+                    if isActive then
+                        ns.Map.clear()
+                    else
+                        ns.Map.show(z, ("%s %d-%d: %s"):format(label, band.from, band.to, name))
+                        ns.Map.waypoint()
+                        print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set). /pp route off hides it."):format(name))
+                    end
+                    UI.show(lastState)
+                end)
+            end
+            y = y + 28
+        end
+    end
+    y = y + 4
+end
+
 -- What to gather at your skill, as one paragraph.
 local function gatherNote(prof)
     local G, kind, rank = ns.Gather, gatherKind(prof), prof.rank or 0
@@ -650,6 +695,7 @@ local function gatherNote(prof)
             .. "lure helps, or fish in an easier zone."
     end
     if text then para(text) end
+    zoneList(prof, kind)
     return kind
 end
 
