@@ -231,10 +231,10 @@ function renderStatic() {
   function pathD(a) { return 'M' + a.map(function (p) { return X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1); }).join(' L'); }
   if (r.manual && r.generated) {
     var gp = pairs(r.generated);
-    if (gp.length > 1) o += '<path d="' + pathD(gp) + '" fill="none" stroke="#ff8c00" stroke-width="3" stroke-linejoin="round" opacity="0.45"/>';
+    if (gp.length > 1) o += '<path d="' + pathD(gp) + ' Z" fill="none" stroke="#ff8c00" stroke-width="3" stroke-linejoin="round" opacity="0.45"/>';
   }
   if (pts.length > 1) {
-    o += '<path d="' + pathD(pts) + '" fill="none" stroke="' + rc + '" stroke-width="4" stroke-linejoin="round" opacity="' + op + '"/>';
+    o += '<path d="' + pathD(pts) + ' Z" fill="none" stroke="' + rc + '" stroke-width="4" stroke-linejoin="round" opacity="' + op + '"/>';
     // arrows every ~10% of map width
     var step = W * 0.10, next = step / 2, run = 0;
     for (var j = 1; j < pts.length; j++) {

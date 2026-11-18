@@ -6,4 +6,4 @@ dist/
 Media/icon-64-preview.png
 .claude/
 tools/review/review.json
-tools/review/notes.json
+tools/review/notes*.json

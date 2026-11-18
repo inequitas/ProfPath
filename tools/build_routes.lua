@@ -131,7 +131,10 @@ local MAXNODES = 250
 local DEDUPE = 0.4 -- map units
 local R = 120                      -- yards: the route must pass within R of every covered node
 local HOP_YARDS = { 180, 220, 260 } -- max hop between linked nodes/stops, tried in order
-local MAX_SEG = 120                 -- yards: Douglas-Peucker never merges points into a segment longer than this
+local MAX_SEG = 400                 -- yards: longest straight segment (also the longest corridor link)
+local CORRIDOR = 160               -- yards: a segment must stay within this distance of a useful node
+UNTANGLE_GROWTH = 1.15
+local GRID = 20                    -- yards: walkable-grid cell size and sampling step
 local CHAIKIN_PASSES = 1
 local TOWN_RADIUS = 250             -- yards around a hostile town that is excluded
 local SIMPLIFY = 8                -- yards: Douglas-Peucker tolerance (also the extra slack for coverage checks)
@@ -377,14 +380,14 @@ end
 
 -- 2-opt on a closed polyline: reverse the part between two crossing segments, while the loop grows by at most 2%
 -- and each new segment is at most `limit` long
-local function untangle(poly0, limit)
+local function untangle(poly0, limit, okfn)
     local poly = {}
     for i, p in ipairs(poly0) do poly[i] = p end
     local n = #poly
     if n < 4 then return poly end
     local cur = 0
     for i = 1, n do cur = cur + dist(poly[i], poly[i % n + 1]) end
-    local maxLen = cur * 1.02
+    local maxLen = cur * (UNTANGLE_GROWTH or 1.02)
     for _ = 1, 1000 do
         local moved = false
         for i = 1, n - 2 do
@@ -394,7 +397,7 @@ local function untangle(poly0, limit)
                     if segCross(a, b, c, d) then
                         local n1, n2 = dist(a, c), dist(b, d)
                         local delta = n1 + n2 - dist(a, b) - dist(c, d)
-                        if n1 <= limit and n2 <= limit and cur + delta <= maxLen then
+                        if n1 <= limit and n2 <= limit and cur + delta <= maxLen and (not okfn or (okfn(a, c) and okfn(b, d))) then
                             local lo, hi = i + 1, j
                             while lo < hi do poly[lo], poly[hi] = poly[hi], poly[lo]; lo = lo + 1; hi = hi - 1 end
                             cur = cur + delta
@@ -420,39 +423,69 @@ end
 local function buildRoute(pts, W, H, circles)
     local n = #pts
     if n == 0 then return nil end
+    local D = MAX_SEG
     local Q = {}
     for i, p in ipairs(pts) do Q[i] = { p[1] * W / 100, p[2] * H / 100 } end
-    local D, comp, best, size, adj
-    for _, d in ipairs(HOP_YARDS) do
-        D = d
-        comp, best, size, adj = components(Q, D)
-        if size >= 0.6 * n then break end
-    end
-    local sel = {}
-    for i = 1, n do if comp[i] == best then sel[#sel + 1] = i end end
-    if #sel > MAXNODES then
-        local seed = sel[1]
-        for _, i in ipairs(sel) do if #adj[i] > #adj[seed] then seed = i end end
-        local inRegion, region, bestD = { [seed] = true }, { seed }, {}
-        local function relax(v)
-            for _, w in ipairs(adj[v]) do
-                if not inRegion[w] then
-                    local d = dist(Q[v], Q[w])
-                    if not bestD[w] or d < bestD[w] then bestD[w] = d end
+
+    -- walkable grid: cells whose centre is within CORRIDOR of a useful node
+    local cols = math.ceil(W / GRID) + 1
+    local walk = {}
+    local rc = math.ceil(CORRIDOR / GRID)
+    for _, p in ipairs(Q) do
+        local cx, cy = math.floor(p[1] / GRID), math.floor(p[2] / GRID)
+        for dy = -rc, rc do
+            for dx = -rc, rc do
+                local x, y = cx + dx, cy + dy
+                if x >= 0 and y >= 0 then
+                    local ccx, ccy = (x + 0.5) * GRID, (y + 0.5) * GRID
+                    if (ccx - p[1]) ^ 2 + (ccy - p[2]) ^ 2 <= CORRIDOR * CORRIDOR then walk[y * cols + x] = true end
                 end
             end
         end
-        relax(seed)
-        while #region < MAXNODES do
-            local pick, pd
-            for w, d in pairs(bestD) do
-                if not inRegion[w] and (not pd or d < pd or (d == pd and w < pick)) then pick, pd = w, d end
-            end
-            if not pick then break end
-            inRegion[pick] = true; region[#region + 1] = pick; bestD[pick] = nil
-            relax(pick)
+    end
+    local function segOK(a, b)
+        for _, c in ipairs(circles or {}) do
+            if segDist(c, a, b) < c.r then return false end
         end
-        sel = region
+        local d = dist(a, b)
+        local k = math.max(1, math.ceil(d / GRID))
+        for s = 0, k do
+            local t = s / k
+            local x, y = a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t
+            if not walk[math.floor(y / GRID) * cols + math.floor(x / GRID)] then return false end
+        end
+        return true
+    end
+
+    -- corridor-connected neighbours (<= MAX_SEG apart), then grow the region from the best-connected node
+    local nb = {}
+    for i = 1, n do nb[i] = {} end
+    for i = 1, n do
+        for j = i + 1, n do
+            local d = dist(Q[i], Q[j])
+            if d <= MAX_SEG and segOK(Q[i], Q[j]) then
+                nb[i][#nb[i] + 1] = { j, d }; nb[j][#nb[j] + 1] = { i, d }
+            end
+        end
+    end
+    local seed = 1
+    for i = 2, n do if #nb[i] > #nb[seed] then seed = i end end
+    local inRegion, sel, bestD = { [seed] = true }, { seed }, {}
+    local function relax(v)
+        for _, e in ipairs(nb[v]) do
+            local w, d = e[1], e[2]
+            if not inRegion[w] and (not bestD[w] or d < bestD[w]) then bestD[w] = d end
+        end
+    end
+    relax(seed)
+    while #sel < MAXNODES do
+        local pick, pd
+        for w, d in pairs(bestD) do
+            if not inRegion[w] and (not pd or d < pd or (d == pd and w < pick)) then pick, pd = w, d end
+        end
+        if not pick then break end
+        inRegion[pick] = true; sel[#sel + 1] = pick; bestD[pick] = nil
+        relax(pick)
     end
     local m = #sel
     local N = {}
@@ -500,45 +533,20 @@ local function buildRoute(pts, W, H, circles)
         return { stops = ns_, share = m / n, D = D, maxhop = 0, len = 0, open = false }
     end
 
-    -- walkable graph over the routed component (nodes within D), stops attached to nodes/stops within D
-    local V = {}
-    for i = 1, n do if comp[i] == best then V[#V + 1] = Q[i] end end
-    local nv = #V
-    for k = 1, ns_ do V[nv + k] = S[k] end
-    local nV = #V
-    local gadj = {}
-    for i = 1, nV do gadj[i] = {} end
-    for i = 1, nV do
-        for j = i + 1, nV do
-            local d = dist(V[i], V[j])
-            if d <= D then
-                local w = d
-                for _, c in ipairs(circles or {}) do
-                    if segDist(c, V[i], V[j]) < c.r then w = d * 10; break end
-                end
-                gadj[i][#gadj[i] + 1] = { j, w }; gadj[j][#gadj[j] + 1] = { i, w }
+    -- stop-to-stop cost: straight distance, x10 when the straight segment leaves the corridor
+    local C = {}
+    for a = 1, ns_ do
+        C[a] = {}
+        for b = 1, ns_ do
+            if a == b then C[a][b] = 0
+            elseif b < a then C[a][b] = C[b][a]
+            else
+                local d = dist(S[a], S[b])
+                C[a][b] = segOK(S[a], S[b]) and d or d * 10
             end
         end
     end
-    local function dijkstra(src)
-        local dd, prev, done = {}, {}, {}
-        for i = 1, nV do dd[i] = math.huge end
-        dd[src] = 0
-        while true do
-            local u, ud = nil, math.huge
-            for i = 1, nV do if not done[i] and dd[i] < ud then u, ud = i, dd[i] end end
-            if not u then break end
-            done[u] = true
-            for _, e in ipairs(gadj[u]) do
-                local v = e[1]
-                if not done[v] and ud + e[2] < dd[v] then dd[v] = ud + e[2]; prev[v] = u end
-            end
-        end
-        return dd, prev
-    end
-    local DD, PREV = {}, {}
-    for k = 1, ns_ do DD[k], PREV[k] = dijkstra(nv + k) end
-    local function G(a, b) return DD[a][nv + b] end
+    local function G(a, b) return C[a][b] end
 
     -- closed tour over the stops with graph distances: NN + 2-opt + or-opt, best of several starts
     local function tourCost(t)
@@ -649,34 +657,46 @@ local function buildRoute(pts, W, H, circles)
     for i = 1, m do if cnt[i] > 0 then Ncov[#Ncov + 1] = N[i] end end
     for _, k in ipairs(tour) do tourStops[#tourStops + 1] = S[k] end
     local nt = #tour
-
-    -- expand every hop into its graph path
-    local raw = { S[tour[1]] }
-    for i = 1, nt do
-        local a, b = tour[i], tour[i % nt + 1]
-        local path, v = {}, nv + b
-        while v and v ~= nv + a do table.insert(path, 1, V[v]); v = PREV[a][v] end
-        for _, p in ipairs(path) do
-            local last = raw[#raw]
-            if p[1] ~= last[1] or p[2] ~= last[2] then raw[#raw + 1] = p end
+    -- polyline through the stops; cut corners (1 Chaikin pass) only where the cut stays in the corridor
+    local poly = {}
+    for i = 1, nt do poly[i] = S[tour[i]] end
+    poly = untangle(poly, MAX_SEG, segOK) -- remove remaining crossings with corridor-valid segments only
+    local function cornerCut(pl)
+        local out, k = {}, #pl
+        if k < 3 then return pl end
+        for i = 1, k do
+            local v, p, q = pl[i], pl[(i - 2) % k + 1], pl[i % k + 1]
+            local c1 = { v[1] + 0.25 * (p[1] - v[1]), v[2] + 0.25 * (p[2] - v[2]) }
+            local c2 = { v[1] + 0.25 * (q[1] - v[1]), v[2] + 0.25 * (q[2] - v[2]) }
+            if segOK(c1, c2) then out[#out + 1] = c1; out[#out + 1] = c2 else out[#out + 1] = v end
+        end
+        return out
+    end
+    if os.getenv("RDEBUG") then
+        local bad = 0
+        for i = 1, #poly do if not segOK(poly[i], poly[i % #poly + 1]) then bad = bad + 1 end end
+        io.stderr:write(string.format("DBG stops=%d crossings=%d invalidSegs=%d\n", #poly, metrics(poly).crossings, bad))
+    end
+    local final = poly
+    if CHAIKIN_PASSES > 0 then
+        local sm = cornerCut(poly)
+        local ok = covers(sm, true, Ncov, R + SIMPLIFY)
+        if ok then
+            final = sm
         end
     end
-    if #raw > 1 and raw[#raw][1] == raw[1][1] and raw[#raw][2] == raw[1][2] then raw[#raw] = nil end
-
-    local line = untangle(raw, D)
-    local maxseg = 0
-    local final
-    for iters = CHAIKIN_PASSES, 0, -1 do
-        local l = line
-        for _ = 1, iters do l = chaikin(l, true) end
-        l = simplify(l, true, SIMPLIFY)
-        if covers(l, true, Ncov, R + SIMPLIFY) then final = l; break end
-    end
+    -- split segments longer than MAX_SEG
     do
-        local ms = 0
-        for i = 1, #final do ms = math.max(ms, dist(final[i], final[i % #final + 1])) end
-        local again = untangle(final, math.max(D, ms))
-        if covers(again, true, Ncov, R + SIMPLIFY) then final = again end
+        local out = {}
+        for i = 1, #final do
+            local a, b = final[i], final[i % #final + 1]
+            out[#out + 1] = a
+            local k = math.ceil(dist(a, b) / MAX_SEG)
+            for s = 1, k - 1 do
+                out[#out + 1] = { a[1] + (b[1] - a[1]) * s / k, a[2] + (b[2] - a[2]) * s / k }
+            end
+        end
+        final = out
     end
     local met = metrics(final)
     local flat = {}

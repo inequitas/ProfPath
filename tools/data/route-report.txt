@@ -1,69 +1,69 @@
 maxhop = longest segment of the final loop polyline (yd); check = crossings*3 + overlap*10 + (maxhop>300 and 2 or 0) + (share<0.3 and 1 or 0)
-mining    175-225 Desolace               len=15270 share=0.83 stops=44 cross=3 overlap=0.27 maxhop=258 check=11.7  [prune stops 57->44 tourLen 20454->15270 cov 148->126 of 148] excl=1/0
-mining     65-125 Thousand Needles       len= 9336 share=0.79 stops=26 cross=2 overlap=0.34 maxhop=178 check=9.4  [prune stops 32->26 tourLen 11270->9336 cov 142->132 of 142] excl=5/0
-mining    175-225 Azshara                len= 1371 share=0.11 stops= 4 cross=0 overlap=0.83 maxhop=102 check=9.3  [prune stops 4->4 tourLen 1525->1525 cov 6->6 of 6] excl=1/0
-mining     65-125 The Barrens            len=21716 share=0.70 stops=67 cross=2 overlap=0.22 maxhop=260 check=8.2  [prune stops 86->67 tourLen 29520->21716 cov 250->214 of 250] excl=0/0
-mining     65-125 Ashenvale              len= 9455 share=0.55 stops=27 cross=2 overlap=0.12 maxhop=259 check=7.2  [prune stops 35->27 tourLen 12476->9455 cov 83->72 of 83] excl=5/0
-mining    275-300 Eastern Plaguelands    len= 4306 share=0.26 stops=10 cross=0 overlap=0.62 maxhop=258 check=7.2  [prune stops 13->10 tourLen 5539->4306 cov 24->21 of 24] excl=0/0
-mining    125-175 Arathi Highlands       len= 3593 share=0.46 stops=10 cross=1 overlap=0.39 maxhop=257 check=6.9  [prune stops 12->10 tourLen 4274->3593 cov 60->58 of 60] excl=10/0
-mining    275-300 Tanaris                len= 3523 share=0.35 stops= 9 cross=0 overlap=0.64 maxhop=229 check=6.4  [prune stops 12->9 tourLen 5180->3523 cov 33->29 of 33] excl=0/0
-mining    175-225 Tanaris                len= 5480 share=0.33 stops=12 cross=0 overlap=0.62 maxhop=258 check=6.2  [prune stops 16->12 tourLen 7920->5480 cov 41->35 of 41] excl=0/0
-herbalism   1-70  Dun Morogh             len= 5136 share=0.64 stops=16 cross=1 overlap=0.27 maxhop=178 check=5.7  [prune stops 19->16 tourLen 6136->5136 cov 109->101 of 109] excl=0/0
-herbalism   1-70  Durotar                len= 9283 share=0.81 stops=30 cross=1 overlap=0.25 maxhop=180 check=5.5  [prune stops 38->30 tourLen 11514->9283 cov 132->117 of 132] excl=0/0
-mining    175-225 The Hinterlands        len= 7177 share=0.74 stops=21 cross=1 overlap=0.22 maxhop=218 check=5.2  [prune stops 27->21 tourLen 9566->7177 cov 81->73 of 81] excl=2/0
-mining    175-225 Stranglethorn Vale     len= 7306 share=0.70 stops=23 cross=1 overlap=0.18 maxhop=256 check=4.8  [prune stops 31->23 tourLen 10092->7306 cov 117->104 of 117] excl=0/0
-mining    275-300 Silithus               len= 2882 share=0.29 stops=10 cross=0 overlap=0.35 maxhop=128 check=4.5  [prune stops 14->10 tourLen 4694->3086 cov 41->35 of 41] excl=0/0
-mining      1-65  Mulgore                len= 5090 share=0.45 stops=20 cross=1 overlap=0.14 maxhop=260 check=4.4  [prune stops 27->20 tourLen 7632->5090 cov 119->103 of 119] excl=0/0
-mining    225-275 Stranglethorn Vale     len= 7819 share=0.65 stops=19 cross=0 overlap=0.41 maxhop=259 check=4.1  [prune stops 26->19 tourLen 9851->7819 cov 91->80 of 91] excl=0/0
-herbalism   1-70  Mulgore                len=12387 share=0.76 stops=51 cross=1 overlap=0.10 maxhop=180 check=4.0  [prune stops 64->51 tourLen 16503->12387 cov 250->226 of 250] excl=0/0
-mining    125-175 Desolace               len=13104 share=0.82 stops=45 cross=1 overlap=0.09 maxhop=256 check=3.9  [prune stops 61->45 tourLen 19768->13104 cov 129->110 of 129] excl=3/0
-mining    225-275 Arathi Highlands       len= 3504 share=0.52 stops=10 cross=0 overlap=0.39 maxhop=257 check=3.9  [prune stops 14->10 tourLen 4764->3504 cov 68->63 of 68] excl=6/0
-herbalism 260-300 Feralas                len=10929 share=0.60 stops=43 cross=1 overlap=0.07 maxhop=217 check=3.7  [prune stops 52->43 tourLen 14205->10929 cov 211->195 of 211] excl=3/0
-herbalism 225-260 Dustwallow Marsh       len= 9720 share=0.86 stops=39 cross=1 overlap=0.06 maxhop=180 check=3.6  [prune stops 52->39 tourLen 13611->9720 cov 202->178 of 202] excl=4/0
-herbalism 225-260 Stranglethorn Vale     len=10298 share=0.79 stops=47 cross=1 overlap=0.05 maxhop=176 check=3.5  [prune stops 51->47 tourLen 11536->10298 cov 250->239 of 250] excl=3/0
-mining    275-300 The Hinterlands        len= 6330 share=0.73 stops=19 cross=0 overlap=0.34 maxhop=219 check=3.4  [prune stops 26->19 tourLen 8951->6330 cov 70->61 of 70] excl=2/0
-herbalism 115-170 Hillsbrad Foothills    len= 8259 share=0.87 stops=31 cross=1 overlap=0.04 maxhop=180 check=3.4  [prune stops 42->31 tourLen 12347->8259 cov 188->166 of 188] excl=24/0
-mining    225-275 Silithus               len= 5478 share=0.41 stops=17 cross=0 overlap=0.33 maxhop=129 check=3.3  [prune stops 23->17 tourLen 7825->5831 cov 54->46 of 54] excl=0/0
-herbalism 170-205 Dustwallow Marsh       len=10123 share=0.84 stops=43 cross=1 overlap=0.01 maxhop=179 check=3.1  [prune stops 57->43 tourLen 14991->10123 cov 202->179 of 202] excl=3/0
-mining    125-175 Stranglethorn Vale     len= 7683 share=0.75 stops=24 cross=0 overlap=0.29 maxhop=118 check=2.9  [prune stops 26->24 tourLen 9030->8078 cov 88->85 of 88] excl=0/0
-mining      1-65  Tirisfal Glades        len=10439 share=0.92 stops=47 cross=0 overlap=0.00 maxhop=541 check=2.0  [prune stops 27->22 tourLen 9011->6918 cov 97->87 of 97] excl=0/0
-herbalism 115-170 Stonetalon Mountains   len=12866 share=0.80 stops=40 cross=0 overlap=0.20 maxhop=219 check=2.0  [prune stops 43->40 tourLen 14318->12866 cov 201->194 of 201] excl=11/0
-mining      1-65  Elwynn Forest          len= 6502 share=0.77 stops=19 cross=0 overlap=0.20 maxhop=219 check=2.0  [prune stops 25->19 tourLen 9358->6502 cov 106->92 of 106] excl=0/0
-mining      1-65  Durotar                len= 5137 share=0.61 stops=17 cross=0 overlap=0.17 maxhop=211 check=1.7  [prune stops 22->17 tourLen 6655->5137 cov 88->80 of 88] excl=0/0
-mining    225-275 The Hinterlands        len= 8175 share=0.79 stops=25 cross=0 overlap=0.16 maxhop=219 check=1.6  [prune stops 33->25 tourLen 10534->8175 cov 97->87 of 97] excl=2/0
-herbalism 170-205 Ashenvale              len=13500 share=0.57 stops=40 cross=0 overlap=0.14 maxhop=259 check=1.4  [prune stops 51->40 tourLen 19583->13500 cov 154->131 of 154] excl=11/0
-mining     65-125 Redridge Mountains     len= 5124 share=0.88 stops=26 cross=0 overlap=0.14 maxhop=174 check=1.4  [prune stops 27->26 tourLen 5215->5124 cov 250->249 of 250] excl=0/0
-herbalism 170-205 Wetlands               len=10253 share=0.79 stops=43 cross=0 overlap=0.13 maxhop=179 check=1.3  [prune stops 53->43 tourLen 13476->10253 cov 250->230 of 250] excl=0/0
-herbalism 205-225 Feralas                len=10435 share=0.51 stops=37 cross=0 overlap=0.13 maxhop=259 check=1.3  [prune stops 50->37 tourLen 15364->10435 cov 145->124 of 145] excl=3/0
-herbalism  70-115 Loch Modan             len= 7483 share=0.95 stops=29 cross=0 overlap=0.13 maxhop=120 check=1.3  [prune stops 33->29 tourLen 8963->7773 cov 162->155 of 162] excl=0/0
-herbalism 205-225 Tanaris                len= 4152 share=0.34 stops=14 cross=0 overlap=0.12 maxhop=129 check=1.2  [prune stops 19->14 tourLen 6290->4400 cov 55->47 of 55] excl=0/0
-herbalism 260-300 Stranglethorn Vale     len=10877 share=0.88 stops=43 cross=0 overlap=0.11 maxhop=218 check=1.1  [prune stops 54->43 tourLen 14470->10877 cov 202->182 of 202] excl=1/0
-mining    225-275 Winterspring           len= 3507 share=0.28 stops=12 cross=0 overlap=0.00 maxhop=259 check=1.0  [prune stops 15->12 tourLen 4737->3507 cov 35->31 of 35] excl=0/0
-mining    275-300 Winterspring           len= 3557 share=0.29 stops=13 cross=0 overlap=0.00 maxhop=254 check=1.0  [prune stops 16->13 tourLen 4787->3557 cov 37->33 of 37] excl=0/0
-herbalism 205-225 Searing Gorge          len= 4138 share=0.88 stops=17 cross=0 overlap=0.10 maxhop=178 check=1.0  [prune stops 22->17 tourLen 5959->4138 cov 69->61 of 69] excl=0/0
-herbalism 260-300 Azshara                len=13530 share=0.83 stops=50 cross=0 overlap=0.09 maxhop=179 check=0.9  [prune stops 61->50 tourLen 17210->13530 cov 250->224 of 250] excl=11/0
-mining      1-65  Zephras Isle           len= 9785 share=0.84 stops=40 cross=0 overlap=0.08 maxhop=179 check=0.8  [prune stops 46->40 tourLen 11107->9785 cov 250->243 of 250] excl=0/0
-mining     65-125 Zephras Isle           len= 9785 share=0.84 stops=40 cross=0 overlap=0.08 maxhop=179 check=0.8  [prune stops 46->40 tourLen 11107->9785 cov 250->243 of 250] excl=0/0
-herbalism   1-70  Teldrassil             len= 8120 share=0.97 stops=33 cross=0 overlap=0.06 maxhop=180 check=0.6  [prune stops 36->33 tourLen 8689->8120 cov 182->176 of 182] excl=0/0
-herbalism   1-70  Zephras Isle           len= 5022 share=0.54 stops=23 cross=0 overlap=0.05 maxhop=179 check=0.5  [prune stops 26->23 tourLen 5595->5022 cov 250->247 of 250] excl=0/0
-herbalism 115-170 Ashenvale              len=16911 share=0.69 stops=62 cross=0 overlap=0.04 maxhop=260 check=0.4  [prune stops 80->62 tourLen 23139->16911 cov 250->213 of 250] excl=13/0
-mining    125-175 Thousand Needles       len= 3617 share=0.38 stops=14 cross=0 overlap=0.03 maxhop=255 check=0.3  [prune stops 19->14 tourLen 5541->3617 cov 67->58 of 67] excl=4/0
-herbalism  70-115 The Barrens            len=14959 share=0.52 stops=62 cross=0 overlap=0.03 maxhop=178 check=0.3  [prune stops 68->62 tourLen 16442->14959 cov 250->240 of 250] excl=0/0
-herbalism 115-170 The Barrens            len=12319 share=0.48 stops=50 cross=0 overlap=0.01 maxhop=180 check=0.1  [prune stops 61->50 tourLen 15327->12319 cov 250->223 of 250] excl=0/0
-herbalism  70-115 Silverpine Forest      len= 7777 share=0.90 stops=33 cross=0 overlap=0.01 maxhop=179 check=0.1  [prune stops 38->33 tourLen 9465->7777 cov 227->217 of 227] excl=0/0
-herbalism   1-70  Tirisfal Glades        len= 9097 share=0.90 stops=39 cross=0 overlap=0.01 maxhop=179 check=0.1  [prune stops 45->39 tourLen 10471->9097 cov 172->163 of 172] excl=0/0
-herbalism 170-205 Arathi Highlands       len= 9379 share=0.92 stops=37 cross=0 overlap=0.01 maxhop=180 check=0.1  [prune stops 43->37 tourLen 11700->9379 cov 179->166 of 179] excl=23/0
-herbalism 205-225 Stranglethorn Vale     len= 8135 share=0.54 stops=40 cross=0 overlap=0.00 maxhop=179 check=0.0  [prune stops 43->40 tourLen 8531->8135 cov 250->247 of 250] excl=8/0
-herbalism 170-205 Stranglethorn Vale     len=10389 share=0.56 stops=45 cross=0 overlap=0.00 maxhop=179 check=0.0  [prune stops 49->45 tourLen 11018->10389 cov 250->244 of 250] excl=11/0
-herbalism   1-70  Elwynn Forest          len= 6993 share=0.93 stops=32 cross=0 overlap=0.00 maxhop=174 check=0.0  [prune stops 35->32 tourLen 7891->6993 cov 131->127 of 131] excl=0/0
-herbalism  70-115 Darkshore              len=10530 share=0.95 stops=44 cross=0 overlap=0.00 maxhop=176 check=0.0  [prune stops 51->44 tourLen 12497->10530 cov 184->174 of 184] excl=0/0
-herbalism  70-115 Zephras Isle           len= 4418 share=0.42 stops=23 cross=0 overlap=0.00 maxhop=179 check=0.0  [prune stops 23->23 tourLen 4418->4418 cov 250->250 of 250] excl=0/0
-herbalism 115-170 Wetlands               len= 9817 share=0.72 stops=46 cross=0 overlap=0.00 maxhop=180 check=0.0  [prune stops 49->46 tourLen 10404->9817 cov 250->245 of 250] excl=0/0
-herbalism 205-225 Alterac Mountains      len= 6030 share=0.85 stops=28 cross=0 overlap=0.00 maxhop=180 check=0.0  [prune stops 36->28 tourLen 9063->6030 cov 173->160 of 173] excl=0/0
-herbalism 225-260 Feralas                len= 9808 share=0.57 stops=44 cross=0 overlap=0.00 maxhop=220 check=0.0  [prune stops 57->44 tourLen 14386->9808 cov 215->190 of 215] excl=4/0
-herbalism 225-260 Swamp of Sorrows       len= 5942 share=0.97 stops=29 cross=0 overlap=0.00 maxhop=179 check=0.0  [prune stops 33->29 tourLen 7199->5942 cov 221->215 of 221] excl=16/0
-herbalism 225-260 The Hinterlands        len= 7706 share=0.96 stops=35 cross=0 overlap=0.00 maxhop=178 check=0.0  [prune stops 40->35 tourLen 8924->7706 cov 177->170 of 177] excl=0/0
-herbalism 260-300 Swamp of Sorrows       len= 5769 share=0.98 stops=23 cross=0 overlap=0.00 maxhop=179 check=0.0  [prune stops 26->23 tourLen 6467->5771 cov 162->158 of 162] excl=11/0
-herbalism 260-300 The Hinterlands        len= 7279 share=0.94 stops=36 cross=0 overlap=0.00 maxhop=178 check=0.0  [prune stops 40->36 tourLen 8576->7279 cov 201->193 of 201] excl=0/0
-mining      1-65  Dun Morogh             len= 8857 share=0.92 stops=33 cross=0 overlap=0.00 maxhop=254 check=0.0  [prune stops 41->33 tourLen 11553->8857 cov 145->134 of 145] excl=0/0
-mining    125-175 Redridge Mountains     len= 1338 share=0.61 stops= 7 cross=0 overlap=0.00 maxhop=179 check=0.0  [prune stops 10->7 tourLen 1914->1338 cov 96->91 of 96] excl=0/0
+herbalism 260-300 Feralas                len=14740 share=0.73 stops=56 cross=5 overlap=0.10 maxhop=391 check=18.0  [prune stops 65->56 tourLen 17085->14740 cov 250->238 of 250] excl=3/0
+herbalism 205-225 Feralas                len=18036 share=0.81 stops=60 cross=4 overlap=0.04 maxhop=396 check=14.4  [prune stops 72->60 tourLen 22670->18036 cov 217->199 of 217] excl=3/0
+mining    175-225 Azshara                len= 3742 share=0.25 stops= 9 cross=3 overlap=0.15 maxhop=381 check=13.5  [prune stops 10->9 tourLen 14519->14020 cov 16->14 of 16] excl=1/0
+mining    175-225 Desolace               len=14893 share=0.86 stops=47 cross=3 overlap=0.08 maxhop=389 check=11.8  [prune stops 58->47 tourLen 18841->14893 cov 151->131 of 151] excl=1/0
+mining    225-275 Stranglethorn Vale     len= 8232 share=0.74 stops=26 cross=3 overlap=0.07 maxhop=381 check=11.7  [prune stops 33->26 tourLen 10479->8232 cov 103->91 of 103] excl=0/0
+herbalism 115-170 Stonetalon Mountains   len=14216 share=0.98 stops=51 cross=3 overlap=0.06 maxhop=400 check=11.6  [prune stops 55->51 tourLen 18653->14216 cov 243->237 of 243] excl=11/0
+mining    225-275 Arathi Highlands       len= 7171 share=0.73 stops=20 cross=2 overlap=0.18 maxhop=399 check=9.8  [prune stops 21->20 tourLen 10600->10474 cov 90->89 of 90] excl=6/0
+mining    275-300 Tanaris                len= 7254 share=0.57 stops=16 cross=2 overlap=0.17 maxhop=362 check=9.7  [prune stops 21->16 tourLen 9391->7254 cov 55->48 of 55] excl=0/0
+mining    125-175 Arathi Highlands       len=10410 share=0.92 stops=28 cross=2 overlap=0.12 maxhop=392 check=9.2  [prune stops 30->28 tourLen 10847->10410 cov 117->116 of 117] excl=10/0
+mining    125-175 Stranglethorn Vale     len= 6942 share=0.74 stops=24 cross=2 overlap=0.05 maxhop=400 check=8.5  [prune stops 27->24 tourLen 7953->6942 cov 88->84 of 88] excl=0/0
+mining    175-225 Tanaris                len= 2955 share=0.22 stops=10 cross=1 overlap=0.08 maxhop=388 check=6.8  [prune stops 12->10 tourLen 3737->2955 cov 26->24 of 26] excl=0/0
+mining    225-275 Winterspring           len= 1038 share=0.16 stops= 4 cross=0 overlap=0.37 maxhop=329 check=6.7  [prune stops 6->4 tourLen 1818->1038 cov 20->18 of 20] excl=0/0
+mining    275-300 Winterspring           len= 1038 share=0.16 stops= 4 cross=0 overlap=0.37 maxhop=329 check=6.7  [prune stops 6->4 tourLen 1818->1038 cov 20->18 of 20] excl=0/0
+herbalism   1-70  Dun Morogh             len= 6365 share=0.98 stops=26 cross=1 overlap=0.08 maxhop=386 check=5.8  [prune stops 28->26 tourLen 6708->6365 cov 158->155 of 158] excl=0/0
+mining    275-300 Eastern Plaguelands    len= 7676 share=0.45 stops=22 cross=1 overlap=0.06 maxhop=363 check=5.6  [prune stops 28->22 tourLen 30649->10694 cov 42->36 of 42] excl=0/0
+herbalism 225-260 Swamp of Sorrows       len= 6444 share=1.00 stops=32 cross=1 overlap=0.03 maxhop=327 check=5.3  [prune stops 32->32 tourLen 6444->6444 cov 221->221 of 221] excl=16/0
+herbalism 205-225 Tanaris                len=13602 share=0.84 stops=42 cross=1 overlap=0.03 maxhop=398 check=5.3  [prune stops 57->42 tourLen 22524->13602 cov 135->115 of 135] excl=0/0
+mining    125-175 Thousand Needles       len=10096 share=0.95 stops=40 cross=1 overlap=0.03 maxhop=381 check=5.3  [prune stops 45->40 tourLen 15339->13984 cov 154->146 of 154] excl=4/0
+mining      1-65  Mulgore                len=12321 share=0.86 stops=48 cross=1 overlap=0.03 maxhop=392 check=5.3  [prune stops 51->48 tourLen 17071->16141 cov 205->197 of 205] excl=0/0
+mining    275-300 The Hinterlands        len= 6284 share=0.82 stops=21 cross=1 overlap=0.03 maxhop=351 check=5.3  [prune stops 31->21 tourLen 8816->6284 cov 80->68 of 80] excl=2/0
+mining    175-225 Stranglethorn Vale     len= 8107 share=0.78 stops=31 cross=1 overlap=0.02 maxhop=382 check=5.2  [prune stops 38->31 tourLen 10342->8107 cov 128->116 of 128] excl=0/0
+mining    225-275 The Hinterlands        len= 8009 share=0.86 stops=30 cross=1 overlap=0.02 maxhop=379 check=5.2  [prune stops 40->30 tourLen 11067->8009 cov 110->95 of 110] excl=2/0
+herbalism   1-70  Durotar                len= 8144 share=0.88 stops=34 cross=1 overlap=0.02 maxhop=394 check=5.2  [prune stops 43->34 tourLen 11317->8144 cov 144->127 of 144] excl=0/0
+mining     65-125 The Barrens            len=22268 share=0.77 stops=74 cross=1 overlap=0.02 maxhop=399 check=5.2  [prune stops 84->74 tourLen 31751->29283 cov 250->235 of 250] excl=0/0
+herbalism 225-260 Feralas                len=13445 share=0.69 stops=56 cross=1 overlap=0.01 maxhop=379 check=5.1  [prune stops 68->56 tourLen 16916->13445 cov 250->227 of 250] excl=4/0
+mining    125-175 Desolace               len=13497 share=0.86 stops=49 cross=1 overlap=0.01 maxhop=388 check=5.1  [prune stops 63->49 tourLen 21618->17418 cov 134->115 of 134] excl=3/0
+mining    125-175 Redridge Mountains     len= 4538 share=0.98 stops=21 cross=1 overlap=0.04 maxhop=299 check=3.4  [prune stops 24->21 tourLen 4969->4538 cov 149->146 of 149] excl=0/0
+herbalism 170-205 Arathi Highlands       len= 9354 share=0.97 stops=40 cross=0 overlap=0.02 maxhop=391 check=2.2  [prune stops 44->40 tourLen 10322->9354 cov 179->175 of 179] excl=23/0
+herbalism 170-205 Wetlands               len= 9238 share=0.80 stops=45 cross=0 overlap=0.01 maxhop=326 check=2.1  [prune stops 53->45 tourLen 11436->9238 cov 250->233 of 250] excl=0/0
+herbalism  70-115 Loch Modan             len= 6711 share=0.96 stops=29 cross=0 overlap=0.01 maxhop=336 check=2.1  [prune stops 33->29 tourLen 7756->6711 cov 164->158 of 164] excl=0/0
+herbalism   1-70  Elwynn Forest          len= 6747 share=0.93 stops=30 cross=0 overlap=0.00 maxhop=356 check=2.0  [prune stops 37->30 tourLen 8265->6747 cov 136->126 of 136] excl=0/0
+herbalism   1-70  Mulgore                len=11719 share=0.80 stops=55 cross=0 overlap=0.00 maxhop=383 check=2.0  [prune stops 64->55 tourLen 13843->11719 cov 250->238 of 250] excl=0/0
+herbalism   1-70  Teldrassil             len= 7485 share=0.98 stops=34 cross=0 overlap=0.00 maxhop=372 check=2.0  [prune stops 37->34 tourLen 8015->7485 cov 182->178 of 182] excl=0/0
+herbalism   1-70  Tirisfal Glades        len= 9329 share=0.95 stops=42 cross=0 overlap=0.00 maxhop=389 check=2.0  [prune stops 48->42 tourLen 10533->9329 cov 181->172 of 181] excl=0/0
+herbalism   1-70  Zephras Isle           len= 4656 share=0.54 stops=23 cross=0 overlap=0.00 maxhop=392 check=2.0  [prune stops 27->23 tourLen 5090->4656 cov 250->247 of 250] excl=0/0
+herbalism  70-115 Darkshore              len= 9827 share=0.95 stops=46 cross=0 overlap=0.00 maxhop=386 check=2.0  [prune stops 52->46 tourLen 11170->9827 cov 184->175 of 184] excl=0/0
+herbalism  70-115 Silverpine Forest      len= 7981 share=0.95 stops=39 cross=0 overlap=0.00 maxhop=372 check=2.0  [prune stops 45->39 tourLen 12643->11003 cov 240->227 of 240] excl=0/0
+herbalism  70-115 The Barrens            len=14227 share=0.53 stops=64 cross=0 overlap=0.00 maxhop=352 check=2.0  [prune stops 68->64 tourLen 15203->14227 cov 250->246 of 250] excl=0/0
+herbalism 115-170 Ashenvale              len=18458 share=0.75 stops=68 cross=0 overlap=0.00 maxhop=390 check=2.0  [prune stops 80->68 tourLen 21651->18458 cov 250->230 of 250] excl=13/0
+herbalism 115-170 Hillsbrad Foothills    len= 7860 share=0.92 stops=34 cross=0 overlap=0.00 maxhop=375 check=2.0  [prune stops 44->34 tourLen 10041->7860 cov 191->175 of 191] excl=24/0
+herbalism 115-170 The Barrens            len=13337 share=0.52 stops=57 cross=0 overlap=0.00 maxhop=347 check=2.0  [prune stops 62->57 tourLen 14349->13337 cov 250->242 of 250] excl=0/0
+herbalism 115-170 Wetlands               len= 9841 share=0.72 stops=45 cross=0 overlap=0.00 maxhop=312 check=2.0  [prune stops 48->45 tourLen 10542->9841 cov 250->246 of 250] excl=0/0
+herbalism 170-205 Ashenvale              len=18006 share=0.85 stops=58 cross=0 overlap=0.00 maxhop=399 check=2.0  [prune stops 83->58 tourLen 34183->26281 cov 230->196 of 230] excl=11/0
+herbalism 170-205 Dustwallow Marsh       len=12326 share=0.96 stops=53 cross=0 overlap=0.00 maxhop=382 check=2.0  [prune stops 63->53 tourLen 14590->12326 cov 214->205 of 214] excl=3/0
+herbalism 170-205 Stranglethorn Vale     len=10554 share=0.56 stops=47 cross=0 overlap=0.00 maxhop=347 check=2.0  [prune stops 51->47 tourLen 11376->10554 cov 250->244 of 250] excl=11/0
+herbalism 205-225 Alterac Mountains      len= 7858 share=0.96 stops=33 cross=0 overlap=0.00 maxhop=372 check=2.0  [prune stops 39->33 tourLen 9483->7858 cov 188->180 of 188] excl=0/0
+herbalism 205-225 Searing Gorge          len= 3647 share=0.88 stops=18 cross=0 overlap=0.00 maxhop=383 check=2.0  [prune stops 22->18 tourLen 4994->3647 cov 69->61 of 69] excl=0/0
+herbalism 205-225 Stranglethorn Vale     len= 7728 share=0.54 stops=40 cross=0 overlap=0.00 maxhop=338 check=2.0  [prune stops 43->40 tourLen 8298->7728 cov 250->246 of 250] excl=8/0
+herbalism 225-260 Dustwallow Marsh       len= 9270 share=0.88 stops=39 cross=0 overlap=0.00 maxhop=392 check=2.0  [prune stops 56->39 tourLen 13519->9270 cov 208->183 of 208] excl=4/0
+herbalism 225-260 Stranglethorn Vale     len= 9985 share=0.80 stops=49 cross=0 overlap=0.00 maxhop=393 check=2.0  [prune stops 52->49 tourLen 10738->9985 cov 250->244 of 250] excl=3/0
+herbalism 260-300 Azshara                len=12663 share=0.91 stops=57 cross=0 overlap=0.00 maxhop=338 check=2.0  [prune stops 61->57 tourLen 13654->12663 cov 250->245 of 250] excl=11/0
+herbalism 260-300 Stranglethorn Vale     len=10277 share=0.89 stops=42 cross=0 overlap=0.00 maxhop=400 check=2.0  [prune stops 54->42 tourLen 12538->10277 cov 202->186 of 202] excl=1/0
+herbalism 260-300 Swamp of Sorrows       len= 5653 share=0.98 stops=24 cross=0 overlap=0.00 maxhop=331 check=2.0  [prune stops 26->24 tourLen 6047->5653 cov 162->159 of 162] excl=11/0
+herbalism 260-300 The Hinterlands        len= 6963 share=0.95 stops=35 cross=0 overlap=0.00 maxhop=358 check=2.0  [prune stops 40->35 tourLen 9183->6963 cov 205->195 of 205] excl=0/0
+mining      1-65  Dun Morogh             len= 8020 share=0.88 stops=32 cross=0 overlap=0.00 maxhop=362 check=2.0  [prune stops 44->32 tourLen 10867->8020 cov 146->128 of 146] excl=0/0
+mining      1-65  Durotar                len= 7074 share=0.86 stops=27 cross=0 overlap=0.00 maxhop=352 check=2.0  [prune stops 34->27 tourLen 9048->7074 cov 127->113 of 127] excl=0/0
+mining      1-65  Elwynn Forest          len= 6474 share=0.91 stops=26 cross=0 overlap=0.00 maxhop=397 check=2.0  [prune stops 31->26 tourLen 8172->6474 cov 120->109 of 120] excl=0/0
+mining      1-65  Tirisfal Glades        len=10439 share=0.92 stops=47 cross=0 overlap=0.00 maxhop=541 check=2.0  [prune stops 40->35 tourLen 12834->11245 cov 130->120 of 130] excl=0/0
+mining      1-65  Zephras Isle           len= 9032 share=0.85 stops=41 cross=0 overlap=0.00 maxhop=383 check=2.0  [prune stops 46->41 tourLen 10124->9032 cov 250->244 of 250] excl=0/0
+mining     65-125 Ashenvale              len= 9097 share=0.62 stops=34 cross=0 overlap=0.00 maxhop=380 check=2.0  [prune stops 44->34 tourLen 13170->9097 cov 95->81 of 95] excl=5/0
+mining     65-125 Redridge Mountains     len= 4945 share=0.88 stops=26 cross=0 overlap=0.00 maxhop=309 check=2.0  [prune stops 27->26 tourLen 5060->4945 cov 250->249 of 250] excl=0/0
+mining     65-125 Thousand Needles       len=10008 share=0.94 stops=37 cross=0 overlap=0.00 maxhop=375 check=2.0  [prune stops 43->37 tourLen 24339->20144 cov 168->158 of 168] excl=5/0
+mining     65-125 Zephras Isle           len= 9032 share=0.85 stops=41 cross=0 overlap=0.00 maxhop=383 check=2.0  [prune stops 46->41 tourLen 10124->9032 cov 250->244 of 250] excl=0/0
+mining    175-225 The Hinterlands        len= 7342 share=0.86 stops=26 cross=0 overlap=0.00 maxhop=379 check=2.0  [prune stops 36->26 tourLen 10908->7342 cov 98->84 of 98] excl=2/0
+mining    225-275 Silithus               len= 7671 share=0.85 stops=30 cross=0 overlap=0.00 maxhop=382 check=2.0  [prune stops 40->30 tourLen 17887->14052 cov 112->96 of 112] excl=0/0
+mining    275-300 Silithus               len= 8262 share=0.87 stops=34 cross=0 overlap=0.00 maxhop=371 check=2.0  [prune stops 45->34 tourLen 11979->8262 cov 119->104 of 119] excl=0/0
+herbalism  70-115 Zephras Isle           len= 3804 share=0.42 stops=23 cross=0 overlap=0.00 maxhop=208 check=0.0  [prune stops 23->23 tourLen 4115->4115 cov 250->250 of 250] excl=0/0
+herbalism 225-260 The Hinterlands        len= 6960 share=0.94 stops=34 cross=0 overlap=0.00 maxhop=291 check=0.0  [prune stops 39->34 tourLen 8842->6960 cov 178->168 of 178] excl=0/0
