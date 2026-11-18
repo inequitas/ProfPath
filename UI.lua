@@ -644,6 +644,10 @@ local function gatherNote(prof)
         local maxLevel = rank < 100 and (10 + math.floor(rank / 10)) or math.floor(rank / 5)
         text = ("|cffffd100Skinning levels by skinning beasts.|r At %d you can skin creatures up to about level "
             .. "%d; the closer to that level, the more often you get a point."):format(rank, maxLevel)
+    elseif kind == "fishing" then
+        text = "|cffffd100Fishing levels by fishing.|r Points come quickly at first and slow down as your skill "
+            .. "rises. When fish keep getting away, the water is too hard for your skill: a better fishing pole or a "
+            .. "lure helps, or fish in an easier zone."
     end
     if text then para(text) end
     return kind

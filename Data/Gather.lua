@@ -3,13 +3,13 @@
 -- you gather them yourself. Skinning values are approximate (they depend on the creature's level).
 local _, ns = ...
 
-local MINING, HERBALISM, SKINNING = "mining", "herbalism", "skinning"
+local MINING, HERBALISM, SKINNING, FISHING = "mining", "herbalism", "skinning", "fishing"
 
 ns.Gather = {
     -- skill line IDs of each gathering profession (both IDs this client uses)
     lines = { [186] = MINING, [2946] = MINING, [182] = HERBALISM, [2944] = HERBALISM,
-              [393] = SKINNING, [2947] = SKINNING },
-    label = { [MINING] = "Mining", [HERBALISM] = "Herbalism", [SKINNING] = "Skinning" },
+              [393] = SKINNING, [2947] = SKINNING, [356] = FISHING, [2943] = FISHING },
+    label = { [MINING] = "Mining", [HERBALISM] = "Herbalism", [SKINNING] = "Skinning", [FISHING] = "Fishing" },
     -- [itemID] = { profession, required skill }
     items = {
         -- ore

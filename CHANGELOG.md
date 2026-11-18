@@ -4,7 +4,7 @@
 
 **Added**
 - **Gather it yourself.** When nobody sells a material on the auction house and you have the gathering profession for it (Mining, Herbalism or Skinning, with enough skill), the plan has you gather it instead of giving up. It counts at its vendor price and costs no gold; the Do it list says "Gather" instead of "Buy". Turn it off with `/pp gather off`.
-- **Mining, Herbalism and Skinning.** These level by gathering, which no shopping list can cover. Instead of "Not enough gold", the Plan and Do it tabs now say there is nothing to buy and what to gather at your skill: the ore route for Mining (Copper, Tin, Iron, Mithril, Thorium), the best herbs for you and the next ones you unlock for Herbalism, and the highest creature level you can skin for Skinning. Smelting steps use ore you mine yourself when the auction house has none.
+- **Mining, Herbalism, Skinning and Fishing.** These level by gathering, which no shopping list can cover. Instead of "Not enough gold", the Plan and Do it tabs now say there is nothing to buy and what to gather at your skill: the ore route for Mining (Copper, Tin, Iron, Mithril, Thorium), the best herbs for you and the next ones you unlock for Herbalism, the highest creature level you can skin for Skinning, and tips for Fishing. Smelting steps use ore you mine yourself when the auction house has none.
 - **Crafting stations.** Steps that need an anvil, forge, cooking fire, loom, tanning rack or other station say so, in the plan and on the Do it craft card.
 
 **Fixed**
