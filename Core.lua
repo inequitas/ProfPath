@@ -189,8 +189,16 @@ function ns.recalc()
         free = have                         -- not started yet: what you have now is your stock
     end
 
+    -- Materials nobody sells that you can gather yourself (ore, herbs, leather).
+    local gather
+    if opt.gather ~= false then
+        local skills = ns.Recipes.gatherSkills()
+        gather = function(itemID) return (ns.Recipes.gatherValue(itemID, skills, prof.skillLine)) end
+    end
+
     local function ctx(t, only, lockAt)
         return {
+            gather = gather,
             skill = prof.rank or 1, target = t or target, recipes = recipes,
             price = ns.Prices.ahTotal, vendorBuy = ns.Prices.vendorBuy, vendorSell = ns.Prices.vendorSell,
             owned = have, free = free, resaleFactor = opt.resaleFactor, effort = opt.effort or 0,
@@ -426,6 +434,7 @@ local HELP = {
     "/profpath effort <copper> - extra cost per craft, to favour fewer crafts (now %d)",
     "/profpath track on|off - re-plan on every skill-up and alert when you should switch (now %s); /profpath minimap on|off; /profpath about",
     "/profpath budget off|batch|upfront|<amount>|mine - fit the plan to your gold or a set amount like 1g50s (now %s); /profpath reserve <gold> keeps some aside",
+    "/profpath gather on|off - gather materials nobody sells yourself, if you have the gathering profession (now %s)",
     "/profpath scan - scan AH prices for this profession (auction house must be open)",
     "/profpath api | probe - dump client API info to SavedVariables (for development)",
 }
@@ -479,6 +488,9 @@ SlashCmdList.PROFPATH = function(msg)
         opt.effort = math.max(0, math.floor(tonumber(arg)))
         chat(("effort = %d copper per craft (higher = fewer crafts, even if it costs a bit more gold)"):format(opt.effort))
         ns.requestRecalc()
+    elseif cmd == "gather" and (arg == "on" or arg == "off") then
+        opt.gather = arg == "on"
+        chat("gather materials nobody sells yourself (ore, herbs, leather): " .. arg); ns.requestRecalc()
     elseif cmd == "prune" and (arg == "on" or arg == "off") then
         opt.prune = arg == "on"; chat("skip items only used by clearly too-expensive recipes: " .. arg)
     elseif cmd == "range" and (arg == "all" or tonumber(arg)) then
@@ -490,7 +502,7 @@ SlashCmdList.PROFPATH = function(msg)
         chat(HELP[4]:format(opt.target or "max")); chat(HELP[5]:format(opt.range or "all"))
         chat(HELP[6]:format(opt.prune and "on" or "off")); chat(HELP[7]:format(opt.effort or 0))
         chat(HELP[8]:format(opt.track and "on" or "off")); chat(HELP[9]:format(opt.budget or "off"))
-        chat(HELP[10]); chat(HELP[11])
+        chat(HELP[10]:format(opt.gather == false and "off" or "on")); chat(HELP[11]); chat(HELP[12])
     end
 end
 

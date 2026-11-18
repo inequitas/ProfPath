@@ -108,6 +108,22 @@ test("no usable recipe: reports where it got stuck", function()
     eq(res.ok, false); eq(res.stuckAt, 1)
 end)
 
+test("gather: unpriced material you can gather is used, costs no gold", function()
+    local recipes = { R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 2 } } } }
+    eq(O.optimize(ctxWith({}, recipes)).ok, false, "without gathering")
+    local res = O.optimize(ctxWith({}, recipes, { gather = function(id) return id == 100 and 5 or nil end }))
+    assert(res.ok, "with gathering")
+    eq(res.shopping[1].source, "gather")
+    eq(res.cash, 0, "no gold spent")
+    near(res.totalCost, 9 * (10 + 1), "valued at the gather value")
+end)
+
+test("gather: an AH price wins over gathering", function()
+    local res = O.optimize(ctxWith({ [100] = 3 }, { R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } } },
+        { gather = function() return 1 end }))
+    eq(res.shopping[1].source, "ah")
+end)
+
 test("crafting an intermediate beats buying it", function()
     -- recipe 2 needs item 200 (AH 50) which recipe 1 makes from 2x item 100 (AH 5)
     local res = O.optimize(ctxWith({ [100] = 5, [200] = 50, [300] = 1000 }, {

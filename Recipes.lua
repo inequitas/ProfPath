@@ -69,6 +69,37 @@ function R.professions()
     return list
 end
 
+-- Gathering professions you have: { mining = rank, herbalism = rank, skinning = rank }.
+-- Matched by skill line ID, so it works in every client language.
+function R.gatherSkills()
+    local out = {}
+    local G = ns.Gather
+    if not (G and GetProfessions and GetProfessionInfo) then return out end
+    local res = { pcall(GetProfessions) }
+    if not res[1] then return out end
+    for i = 2, 8 do
+        local idx = res[i]
+        if idx then
+            local _, _, rank, _, _, _, skillLine = GetProfessionInfo(idx)
+            local kind = skillLine and G.lines[skillLine]
+            if kind then out[kind] = math.max(out[kind] or 0, rank or 0) end
+        end
+    end
+    return out
+end
+
+-- Per-unit value of an item you would gather yourself, or nil if you can't. Planning a gathering
+-- profession itself (Mining): its ore is always available, the recipes' skill gates it.
+function R.gatherValue(itemID, skills, planningLine)
+    local g = ns.Gather and ns.Gather.items[itemID]
+    if not g then return nil end
+    local kind = g[1]
+    local own = planningLine and ns.Gather.lines[planningLine] == kind
+    if not own and (skills[kind] or -1) < g[2] then return nil end
+    local sell = ns.Prices.vendorSell(itemID)
+    return math.max(sell or 0, 1), kind
+end
+
 -- ---------- live capture from the profession window ----------
 
 local DIFF = { [0] = "orange", [1] = "yellow", [2] = "green", [3] = "gray" }
@@ -341,12 +372,20 @@ local function costModel(prof)
     end
 end
 
+-- Recipe name in the client's language (the data has English names), for display and for
+-- matching what trainers list.
+local spellName = C_Spell and C_Spell.GetSpellName or (GetSpellInfo and function(id) return (GetSpellInfo(id)) end)
+local function localName(id, english)
+    local n = spellName and spellName(id)
+    return (type(n) == "string" and n ~= "") and n or english
+end
+
 -- Learn cost and required skill for an unlearned recipe: recipe item (AH or vendor price, item's
 -- required skill) or trainer (captured cost and requirement). Cost nil = unknown.
 local function learnInfo(prof, id, name)
     local ri = ns.Data.recipeItems[id]
     local t = ProfPathDB.trainer[prof.name]
-    local te = t and t[name]
+    local te = t and (t[name] or (ns.Data.recipes[id] and t[ns.Data.recipes[id][8]]))
     if type(te) == "number" then te = { cost = te } end -- older saved format
     local cost, req, source
     if te then cost, req, source = te.cost, te.req, { kind = "trainer" } end
@@ -464,8 +503,9 @@ function R.build(prof)
             local reagents = {}
             local rg = d[7]
             for i = 1, #rg, 2 do reagents[#reagents + 1] = { rg[i], rg[i + 1] } end
-            local r = { id = id, name = d[8], minSkill = d[2], yellow = d[3], gray = d[4],
-                productID = d[5], productQty = d[6] or 1, reagents = reagents, learned = learned[id] == true }
+            local r = { id = id, name = localName(id, d[8]), minSkill = d[2], yellow = d[3], gray = d[4],
+                productID = d[5], productQty = d[6] or 1, reagents = reagents, learned = learned[id] == true,
+                focus = ns.Data.focus and ns.Data.focus[id] }
             local ri = ns.Data.recipeItems[id]
             local skip
             -- Long cooldown (transmutes, Mooncloth): never a leveling step; still a known producer.

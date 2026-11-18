@@ -3,6 +3,7 @@
 -- Usage (from the ProfPath folder): lua tests/check_professions.lua <SavedVariables path>
 local ns = {}
 assert(loadfile("Data/Recipes.lua"))(nil, ns)
+assert(loadfile("Data/Gather.lua"))(nil, ns)
 local O = assert(loadfile("Optimizer.lua"))(nil, ns)
 dofile(arg[1])
 local DB, D = ProfPathDB, ns.Data
@@ -99,10 +100,15 @@ for _, line in ipairs(LINES) do
     print(("== %s (%d recipes)"):format(D.skillLines[line] or line, #recipes))
     for _, b in ipairs(BANDS) do
         local res = O.optimize({ skill = b[1], target = b[2], recipes = recipes, price = ahTotal, vendorBuy = vendorBuy,
-            vendorSell = vendorSell, owned = {}, resaleFactor = 0 })
+            vendorSell = vendorSell, owned = {}, resaleFactor = 0,
+            -- a fresh character gathers only for the profession being planned (ore for Mining)
+            gather = function(id) local g = ns.Gather.items[id]
+                if g and ns.Gather.lines[line] == g[1] then return math.max(vendorSell(id) or 0, 1) end end })
         if not res.ok then
-            print(("  %3d-%3d  NO PATH, stuck at %s (%d unpriced materials)"):format(b[1], b[2], tostring(res.stuckAt),
-                #(function() local t = {} for k in pairs(res.missing or {}) do t[#t + 1] = k end return t end)()))
+            local ids = {}
+            for k in pairs(res.missing or {}) do ids[#ids + 1] = k end
+            print(("  %3d-%3d  NO PATH, stuck at %s (unpriced items: %s)"):format(b[1], b[2], tostring(res.stuckAt),
+                table.concat(ids, " ")))
         else
             local crafts, names = 0, {}
             for _, s in ipairs(res.steps) do

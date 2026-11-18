@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.0: Gathering, crafting stations and other languages *(unreleased)*
+
+**Added**
+- **Gather it yourself.** When nobody sells a material on the auction house and you have the gathering profession for it (Mining, Herbalism or Skinning, with enough skill), the plan has you gather it instead of giving up. It counts at its vendor price and costs no gold; the Do it list says "Gather" instead of "Buy". Turn it off with `/pp gather off`.
+- **Mining.** The plan explains that Mining levels mostly by mining nodes and shows the ore route from your skill (Copper, Tin, Iron, Mithril, Thorium). Smelting steps use ore you mine yourself when the auction house has none.
+- **Crafting stations.** Steps that need an anvil, forge, cooking fire, loom, tanning rack or other station say so, in the plan and on the Do it craft card.
+
+**Fixed**
+- **Non-English game clients.** Recipe names now show in your game's language, trainer recipe costs are matched in any language, and Expert and Artisan rank-ups are recognized at trainers in any language.
+
+**Changed**
+- Recipe data updated for game build 1.60.1.70959 (no recipe changes).
+
 ## v0.1.1: Tools, cooldowns and specializations *(2026-11-17)*
 
 **Fixed**

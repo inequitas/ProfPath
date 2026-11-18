@@ -13,7 +13,7 @@ local ICON_OK = "Interface\\RaidFrame\\ReadyCheck-Ready"
 local ICON_TODO = "Interface\\RaidFrame\\ReadyCheck-Waiting"
 local ICON_BAD = "Interface\\RaidFrame\\ReadyCheck-NotReady"
 local ICON_GOLD = "Interface\\Icons\\INV_Misc_Coin_01"
-local SOURCE = { ah = "Auction House", vendor = "Vendor", craft = "Craft" }
+local SOURCE = { ah = "Auction House", vendor = "Vendor", craft = "Craft", gather = "Gather it yourself" }
 
 -- ---------- helpers ----------
 
@@ -27,6 +27,12 @@ local function money(c)
     return table.concat(out, " ")
 end
 UI.money = money
+
+-- Crafting station a recipe needs (Anvil, Forge, Cooking Fire...), or nil.
+local function station(r)
+    local f = r and r.focus
+    return f and ns.Data.focusNames and ns.Data.focusNames[f] or nil
+end
 
 local function itemName(id)
     local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
@@ -581,6 +587,7 @@ local function renderStepDetail(st)
     for _, t in ipairs(r.toolsMissing or {}) do
         learn = learn .. ("\nNeeds a |cffffffff%s|r, which you don't carry (about %s)."):format(t.name, money(t.cost))
     end
+    if station(r) then learn = learn .. ("\nCraft it next to a |cffffffff%s|r."):format(station(r)) end
     local f = text("GameFontHighlightSmall", x0, y, CONTENT - x0 - 4, learn .. "\n" .. colourRange(r), "LEFT", true)
     y = y + f:GetStringHeight() + 6
     for _, rg in ipairs(st.reagents) do
@@ -597,8 +604,22 @@ local function renderStepDetail(st)
     y = y + f:GetStringHeight() + 10
 end
 
+-- Mining levels mostly by mining nodes, which no recipe plan can show: give the ore route.
+local function miningNote(prof)
+    local G = ns.Gather
+    if not (G and prof.skillLine and G.lines[prof.skillLine] == "mining") then return end
+    local parts = {}
+    for _, r in ipairs(G.miningRoute) do
+        if r[2] > (prof.rank or 0) then parts[#parts + 1] = ("%s %d-%d"):format(itemName(r[3]), r[1], r[2]) end
+    end
+    if #parts == 0 then return end
+    para("|cffffd100Mining levels mostly by mining ore nodes:|r " .. table.concat(parts, ", ")
+        .. ". Smelting gives extra points; the plan below uses ore you mine yourself when the auction house has none.")
+end
+
 local function renderPlan(state)
     local prof, res, info = state.prof, state.result, state.info
+    miningNote(prof)
     if res.broke then
         local b = state.budget
         stepTitle(2, "Not enough gold for the next point",
@@ -611,8 +632,10 @@ local function renderPlan(state)
         return
     end
     if not res.ok then
-        stepTitle(2, "No path yet", ("Stuck at skill %d: every recipe that still gives points has an unpriced material.")
-            :format(res.stuckAt or 0))
+        local mining = ns.Gather and prof.skillLine and ns.Gather.lines[prof.skillLine] == "mining"
+        stepTitle(2, "No path yet", mining
+            and ("Smelting alone can't take you past %d. Mine ore nodes (see above) to keep leveling."):format(res.stuckAt or 0)
+            or ("Stuck at skill %d: every recipe that still gives points has an unpriced material."):format(res.stuckAt or 0))
         button("<  Back to Prepare", 4, 180, function() UI.setTab(1) end)
         y = y + 32
         return
@@ -678,7 +701,12 @@ local function renderPlan(state)
         end
     end
 
-    if state.partialStop then
+    local isMining = ns.Gather and prof.skillLine and ns.Gather.lines[prof.skillLine] == "mining"
+    if state.partialStop and isMining then
+        y = y + 4
+        para(("|cffff8800Smelting stops giving points at %d. Mine ore nodes (see above) to keep leveling.|r")
+            :format(state.partialStop))
+    elseif state.partialStop then
         y = y + 4
         para(("|cffff8800The plan stops at %d: past that, no recipe has priced materials and a known way to learn it. "
             .. "Scan the auction house or visit a trainer, then it will reach further.|r"):format(state.partialStop))
@@ -692,6 +720,9 @@ local function renderPlan(state)
     if (info.cooldownSkipped or 0) > 0 then notes[#notes + 1] = info.cooldownSkipped .. " have a long cooldown" end
     if (info.toolSkipped or 0) > 0 then notes[#notes + 1] = info.toolSkipped .. " need a tool with no known price" end
     if res.missing and #res.missing > 0 then notes[#notes + 1] = #res.missing .. " materials have no price" end
+    local gathered = 0
+    for _, s in ipairs(res.shopping or {}) do if s.source == "gather" then gathered = gathered + 1 end end
+    if gathered > 0 then notes[#notes + 1] = gathered .. " materials you gather yourself (valued at their vendor price)" end
     if state.ms then notes[#notes + 1] = ("calculated in %d ms"):format(floor(state.ms + 0.5)) end
     if #notes > 0 then y = y + 6; para("|cff888888" .. table.concat(notes, "  -  ") .. "|r") end
 
@@ -800,8 +831,8 @@ local function renderDo(state)
         local sub
         if buy == 0 and use == 0 then sub = "not needed: covered by what you already crafted"
         else sub = ("have %d, using %d  -  %s  -  %s each"):format(have, use, SOURCE[m.source] or "?", money(m.unitCost)) end
-        line(itemIcon(m.itemID), (i == 1 and num() or "      ") .. ("Buy %s  |cff888888x%d|r"):format(itemName(m.itemID), buy),
-            sub, buy == 0 and "|cff40c040done|r" or money(m.unitCost * buy),
+        line(itemIcon(m.itemID), (i == 1 and num() or "      ") .. ((m.source == "gather" and "Gather" or "Buy") .. " %s  |cff888888x%d|r"):format(itemName(m.itemID), buy),
+            sub, buy == 0 and "|cff40c040done|r" or m.source == "gather" and "|cff888888gather|r" or money(m.unitCost * buy),
             { status = buy == 0 and ICON_OK or ICON_TODO, zebra = i % 2 == 0 })
     end
 
@@ -812,7 +843,8 @@ local function renderDo(state)
         local parts = {}
         for _, rg in ipairs(it.recipe.reagents) do parts[#parts + 1] = rg[2] .. "x " .. itemName(rg[1]) end
         line(itemIcon(it.recipe.productID), num() .. ("Craft %s  |cff888888x%d|r"):format(it.recipe.name or "?", left),
-            left == 0 and ("you have enough (%d)"):format(have) or ("each from " .. table.concat(parts, ", ")),
+            left == 0 and ("you have enough (%d)"):format(have) or ("each from " .. table.concat(parts, ", ")
+                .. (station(it.recipe) and ("  -  at a " .. station(it.recipe)) or "")),
             ("have %d"):format(have), { status = left == 0 and ICON_OK or ICON_TODO, rightW = 90 })
     end
 
@@ -828,9 +860,10 @@ local function renderDo(state)
     tex(nil, 0, y, 4, cardH, 0.25, 0.8, 0.35, 1)
     tex(itemIcon(r.productID), 14, y + 12, 36, 36)
     text("GameFontNormalLarge", 60, y + 10, CONTENT - 70, num() .. ("Craft %s until skill %d"):format(r.name or "?", st.toSkill))
-    text("GameFontHighlight", 60, y + 32, CONTENT - 70, batchCrafts
+    text("GameFontHighlight", 60, y + 32, CONTENT - 70, (batchCrafts
         and ("|cffffffff%d|r crafts this batch  -  about %d to go in total"):format(batchCrafts, crafts)
         or ("about |cffffffff%d|r crafts to go"):format(crafts))
+        .. (station(r) and ("  -  |cffffd100at a %s|r"):format(station(r)) or ""))
 
     -- skill bar: from where this step started to its target
     local barX, barW, barY = 60, CONTENT - 76, y + 54

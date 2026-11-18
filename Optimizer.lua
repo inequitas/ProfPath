@@ -60,6 +60,12 @@ local function makeUnitCost(ctx, producers, missing)
         local vb = ctx.vendorBuy and ctx.vendorBuy(itemID)
         -- On a tie the vendor wins: unlimited stock, and its price does not climb with quantity.
         if vb and vb <= best then best, src = vb, "vendor" end
+        -- Nothing to buy: gather it yourself (ore, herbs, leather) if you can, valued at what it
+        -- would sell for at a vendor.
+        if best == INF and ctx.gather then
+            local g = ctx.gather(itemID)
+            if g then best, src = g, "gather" end
+        end
         for _, r in ipairs(producers[itemID] or {}) do
             local c = ctx.effort or 0 -- optional cost per craft: prefer buying over lots of crafting
             for _, rg in ipairs(r.reagents) do
@@ -301,7 +307,8 @@ function O.optimize(ctx)
         local buy = math.max(n - owned, 0)
         local lineCost = 0
         if buy > 0 then
-            if src == "vendor" then lineCost = ctx.vendorBuy(itemID) * buy
+            if src == "gather" then lineCost = 0 -- costs time, not gold
+            elseif src == "vendor" then lineCost = ctx.vendorBuy(itemID) * buy
             else lineCost = (ctx.price and ctx.price(itemID, buy)) or unit * buy end
         end
         cash = cash + lineCost
@@ -336,7 +343,8 @@ function O.optimize(ctx)
         for itemID, qty in pairs(sNeed) do
             local n = math.ceil(qty - 1e-9)
             local unit, src = unitCost(itemID)
-            local cost = src == "vendor" and ctx.vendorBuy(itemID) * n or (ctx.price and ctx.price(itemID, n)) or unit * n
+            local cost = src == "gather" and 0 or src == "vendor" and ctx.vendorBuy(itemID) * n
+                or (ctx.price and ctx.price(itemID, n)) or unit * n
             st.cash = st.cash + cost
             st.materials[#st.materials + 1] = { itemID = itemID, qty = n, source = src, lineCost = cost, unitCost = cost / n }
         end

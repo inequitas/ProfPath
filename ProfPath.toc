@@ -12,6 +12,7 @@
 ## OptionalDeps: Auctionator, TradeSkillMaster
 
 Data\Recipes.lua
+Data\Gather.lua
 Data\Trainers.lua
 Optimizer.lua
 Prices.lua

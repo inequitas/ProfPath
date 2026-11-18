@@ -55,6 +55,16 @@ local function captureTrainer()
                     isRank = true
                 end
             end
+            -- Other languages: a rank is listed under the profession's own name; tell which one by
+            -- its skill requirement (50, 125, 200) or, failing that, its level requirement.
+            if not isRank and name == prof then
+                for _, rk in ipairs(ns.Recipes.RANKS) do
+                    if (req and req == rk.req) or (not req and level and level == rk.level) then
+                        ranks[rk.name] = { cost = cost, req = req, level = level }
+                        isRank = true
+                    end
+                end
+            end
             if not isRank then t[name] = { cost = cost, req = req } end
         end
     end

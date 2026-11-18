@@ -1,5 +1,9 @@
 # ProfPath
 
+[![CurseForge downloads](https://img.shields.io/curseforge/dt/1812869?label=CurseForge%20downloads)](https://www.curseforge.com/wow/addons/profpath)
+[![Latest release](https://img.shields.io/github/v/release/inequitas/ProfPath)](https://github.com/inequitas/ProfPath/releases/latest)
+[![CI](https://github.com/inequitas/ProfPath/actions/workflows/ci.yml/badge.svg?branch=beta)](https://github.com/inequitas/ProfPath/actions/workflows/ci.yml)
+
 **The cheapest way to level your professions in WoW: Forever, worked out from your realm's live auction prices.**
 
 Download: [CurseForge](https://www.curseforge.com/wow/addons/profpath) (WoW: Forever).
