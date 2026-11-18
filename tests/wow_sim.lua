@@ -42,7 +42,7 @@ SlashCmdList = {}
 C_Timer = { After = function(_, fn) fn() end }
 time = os.time
 GetTime = os.clock
-GetBuildInfo = function() return "1.60.1", "70938", "Nov 12 2026", 16001 end
+GetBuildInfo = function() return "1.60.1", "70959", "Nov 17 2026", 16001 end
 UnitName = function() return "Tester" end
 simLevel = 5 -- below Journeyman's level 10: plans stop at the 75 cap unless a test raises it
 UnitLevel = function() return simLevel end

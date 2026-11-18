@@ -1,8 +1,8 @@
 # Generates Data\Recipes.lua from wago.tools DB2 exports for one WoW: Forever build.
 # Usage (from the ProfPath folder):  powershell -ExecutionPolicy Bypass -File tools\build_data.ps1
-# Optional:  -Build 1.60.1.70938   -Refresh (re-download cached tables)
+# Optional:  -Build 1.60.1.70959   -Refresh (re-download cached tables)
 param(
-    [string]$Build = "1.60.1.70938",
+    [string]$Build = "1.60.1.70959",
     [switch]$Refresh,
     [string]$CacheDir,
     [string]$OutFile
