@@ -12,6 +12,12 @@ New-Item -ItemType Directory -Force "$dir\Data", "$dir\Media" | Out-Null
 Copy-Item (Join-Path $root "ProfPath.toc"), (Join-Path $root "*.lua"), (Join-Path $root "LICENSE.txt") $dir
 Copy-Item (Join-Path $root "Data\*.lua") "$dir\Data"
 Copy-Item (Join-Path $root "Media\icon.tga") "$dir\Media"
+# Like the BigWigs packager: comment out --@debug@ ... --@end-debug@ blocks (test commands).
+Get-ChildItem $dir -Recurse -Filter *.lua | ForEach-Object {
+    $text = [System.IO.File]::ReadAllText($_.FullName)
+    $new = [regex]::Replace($text, '(?s)--@debug@(.*?)--@end-debug@', '--[===[@debug@$1--@end-debug@]===]')
+    if ($new -ne $text) { [System.IO.File]::WriteAllText($_.FullName, $new, (New-Object System.Text.UTF8Encoding $false)) }
+}
 
 $dist = Join-Path $root "dist"
 New-Item -ItemType Directory -Force $dist | Out-Null

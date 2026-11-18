@@ -121,10 +121,16 @@ local function getWorldDot()
     return d
 end
 
+-- Extra routes drawn on the world map only (test command "/pp route all"): { {map, route, color}, ... }
+local extra = {}
+
 local function drawWorld()
     if not overlay then return end
-    local ok = current and WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID
-        and WorldMapFrame:GetMapID() == current.map
+    local mapID = WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
+    local list = {}
+    if current and current.map == mapID then list[1] = { route = current.route, open = current.open, color = COLOR } end
+    for _, e in ipairs(extra) do if e.map == mapID then list[#list + 1] = e end end
+    local ok = mapID and #list > 0
     local c = canvas()
     local w, h = 0, 0
     if ok and c then w, h = c:GetWidth(), c:GetHeight() end
@@ -146,22 +152,20 @@ local function drawWorld()
     local scale = canvasScale()
     lastCanvasScale = scale
     local thick, dot = WORLD_THICKNESS / scale, DOT_SIZE / scale
-    local pts = current.route
-    local n = math.floor(#pts / 2)
     wLinesUsed, wDotsUsed = 0, 0
-    local segs = current.open and n - 1 or n -- open path: no edge from the last point back to the first
-    for i = 1, n do
-        local j = i % n + 1 -- closed loop: the last point connects back to the first
-        local x1, y1 = pts[i * 2 - 1] / 100 * w, -pts[i * 2] / 100 * h
-        local x2, y2 = pts[j * 2 - 1] / 100 * w, -pts[j * 2] / 100 * h
-        if n > 1 and i <= segs then
+    for _, r in ipairs(list) do
+        local pts, col = r.route, r.color or COLOR
+        local n = math.floor(#pts / 2)
+        local segs = r.open and n - 1 or n -- open path: no edge from the last point back to the first
+        for i = 1, (n > 1) and segs or 0 do
+            local j = i % n + 1 -- closed loop: the last point connects back to the first
             local l = getWorldLine()
+            l:SetColorTexture(col[1], col[2], col[3], col[4] or 0.9)
             l:SetThickness(thick)
-            l:SetStartPoint("TOPLEFT", overlay, x1, y1)
-            l:SetEndPoint("TOPLEFT", overlay, x2, y2)
+            l:SetStartPoint("TOPLEFT", overlay, pts[i * 2 - 1] / 100 * w, -pts[i * 2] / 100 * h)
+            l:SetEndPoint("TOPLEFT", overlay, pts[j * 2 - 1] / 100 * w, -pts[j * 2] / 100 * h)
             l:Show()
         end
-        -- No dot per point: the smoothed line passes near nodes, not through them.
     end
     for i = wLinesUsed + 1, #wLines do wLines[i]:Hide() end
     for i = wDotsUsed + 1, #wDots do wDots[i]:Hide() end
@@ -186,7 +190,7 @@ local function setupWorld()
         acc = acc + dt
         if acc < 0.2 then return end
         acc = 0
-        if not current then return end
+        if not current and #extra == 0 then return end
         local id = WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
         if id ~= lastMapID or (overlay:IsShown() and canvasScale() ~= lastCanvasScale) then
             lastMapID = id
@@ -426,6 +430,35 @@ function Map.slash(arg)
         Map.clear()
         say("Route cleared.")
         return true
+    --@debug@
+    elseif arg:match("^all") then
+        -- Test: every route of a profession on the world map, one colour per skill band.
+        local kind = arg:match("herb") and "herbalism" or "mining"
+        local palette = { { 1, 0.35, 0.15 }, { 1, 0.85, 0.1 }, { 0.3, 1, 0.3 }, { 0.2, 0.8, 1 }, { 0.75, 0.4, 1 }, { 1, 0.4, 0.8 }, { 1, 1, 1 } }
+        wipe(extra)
+        local count = 0
+        for bi, b in ipairs(ns.Routes and ns.Routes[kind] or {}) do
+            for _, z in ipairs(b.zones) do
+                if z.route then
+                    extra[#extra + 1] = { map = z.map, route = z.route, open = z.open, color = palette[(bi - 1) % #palette + 1] }
+                    count = count + 1
+                end
+            end
+        end
+        pcall(setupWorld)
+        pcall(drawWorld)
+        local legend = {}
+        for bi, b in ipairs(ns.Routes and ns.Routes[kind] or {}) do
+            local p = palette[(bi - 1) % #palette + 1]
+            legend[#legend + 1] = ("|cff%02x%02x%02x%d-%d|r"):format(p[1] * 255, p[2] * 255, p[3] * 255, b.from, b.to)
+        end
+        say(("Showing all %d %s routes on the world map: %s. /pp route none clears them."):format(count, kind, table.concat(legend, " ")))
+        return true
+    elseif arg == "none" then
+        wipe(extra)
+        pcall(drawWorld)
+        say("Test routes cleared.")
+        return true
     elseif arg:match("^test") then
         -- Testing without the profession: /pp route test [mining|herbalism] [skill]
         -- Shows the route for the zone you are in (any skill band that has one), or the given band.
@@ -477,6 +510,7 @@ function Map.slash(arg)
             say(("redraw: %s, lines used now %d, overlay shown %s"):format(ok and "ok" or tostring(err), wLinesUsed or 0, tostring(overlay:IsShown())))
         end
         return true
+    --@end-debug@
     elseif arg == "show" then
         if not current then
             say("No active route. Pick one in the Gather tab.")
