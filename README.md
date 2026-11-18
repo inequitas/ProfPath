@@ -13,6 +13,11 @@ ProfPath looks at your character (known recipes, bags, gold) and your auction ho
 path from your current skill, and keeps re-checking it while you level. Type `/pp` in game or use the
 minimap button: **Prepare → Plan → Do it**. Run `/pp help` for all commands.
 
+<p>
+  <img src="Media/screenshots/2-plan.png" alt="Plan tab: the cheapest path with cost per step" width="49%">
+  <img src="Media/screenshots/4-do-it.png" alt="Do it tab: what to learn, buy and craft, in batches" width="49%">
+</p>
+
 ## What's new
 
 **[v0.1.1](https://github.com/inequitas/ProfPath/releases/tag/v0.1.1): Tools, cooldowns and specializations** *(2026-11-17)*

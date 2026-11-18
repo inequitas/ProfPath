@@ -13,3 +13,4 @@ ignore:
   - SECURITY.md
   - Media/icon-256.png
   - Media/icon-512.png
+  - Media/screenshots
