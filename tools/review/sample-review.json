@@ -1,0 +1,7 @@
+{"generated":"sample","routes":[
+{"id":"mining-2-3","kind":"mining","from":65,"to":125,"area":44,"map":1433,"zone":"Redridge Mountains","side":"A","guide":true,"len":1758,"share":0.53,"stops":5,"crossings":0,"overlap":0.05,"maxhop":240,"check":1.2,"D":250,"R":120,"yards":[2171,1448],
+ "route":[30,30,50,25,70,35,75,60,55,70,35,60,30,30],"stopsXY":[30,30,50,25,70,35,75,60,35,60],
+ "nodes":[[30,32,"Copper Vein"],[52,27,"Copper Vein"],[70,38,"Tin Vein"],[20,80,"Copper Vein"],[90,20,"Tin Vein"],[56,68,"Copper Vein"]],"covered":[0,1,2,5]},
+{"id":"herbalism-1-2","kind":"herbalism","from":1,"to":70,"area":10,"map":1411,"zone":"Durotar","side":"H","guide":false,"len":2100,"share":0.4,"stops":4,"crossings":1,"overlap":0.1,"maxhop":300,"check":0.8,"D":250,"R":120,"yards":[2000,1333],
+ "route":[20,20,60,20,60,60,20,60,20,20],"stopsXY":[20,20,60,20,60,60,20,60],
+ "nodes":[[22,22,"Peacebloom"],[58,22,"Silverleaf"],[62,58,"Peacebloom"],[80,80,"Silverleaf"]],"covered":[0,1,2]}]}

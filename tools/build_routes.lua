@@ -189,7 +189,7 @@ for _, obj in pairs(json) do
         for areaStr, pts in pairs(obj.zones or {}) do
             local area = tonumber(areaStr)
             bucket[area] = bucket[area] or {}
-            for _, p in ipairs(pts) do bucket[area][#bucket[area] + 1] = { p[1], p[2] } end
+            for _, p in ipairs(pts) do bucket[area][#bucket[area] + 1] = { p[1], p[2], name } end
         end
     else
         ignoredNames[obj.name] = true
@@ -324,6 +324,88 @@ local function covers(line, closed, nodesY, r)
     return true
 end
 
+local function orient(a, b, c) return (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]) end
+local function segCross(a, b, c, d)
+    local o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+    return ((o1 > 0 and o2 < 0) or (o1 < 0 and o2 > 0)) and ((o3 > 0 and o4 < 0) or (o3 < 0 and o4 > 0))
+end
+
+-- closed polyline quality: crossings, overlap (share within 40 yd of a part >150 yd away along the loop), longest segment, length
+local function metrics(poly)
+    local n = #poly
+    local len, maxseg, cum = 0, 0, { 0 }
+    for i = 1, n do
+        local d = dist(poly[i], poly[i % n + 1])
+        len = len + d; cum[i + 1] = len
+        if d > maxseg then maxseg = d end
+    end
+    local cr = 0
+    for i = 1, n do
+        for j = i + 2, n do
+            if not (i == 1 and j == n) then
+                if segCross(poly[i], poly[i % n + 1], poly[j], poly[j % n + 1]) then cr = cr + 1 end
+            end
+        end
+    end
+    -- resample every 20 yd
+    local samples = {}
+    local k = 1
+    local s = 0
+    while s < len do
+        while cum[k + 1] < s do k = k + 1 end
+        local a, b = poly[k], poly[k % n + 1]
+        local seglen = cum[k + 1] - cum[k]
+        local t = seglen > 0 and (s - cum[k]) / seglen or 0
+        samples[#samples + 1] = { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, s }
+        s = s + 20
+    end
+    local close = 0
+    for i = 1, #samples do
+        for j = 1, #samples do
+            local da = math.abs(samples[i][3] - samples[j][3])
+            da = math.min(da, len - da)
+            if da > 150 and dist(samples[i], samples[j]) <= 40 then close = close + 1; break end
+        end
+    end
+    return { crossings = cr, overlap = #samples > 0 and close / #samples or 0, maxseg = maxseg, len = len }
+end
+
+-- 2-opt on a closed polyline: reverse the part between two crossing segments, while the loop grows by at most 2%
+-- and each new segment is at most `limit` long
+local function untangle(poly0, limit)
+    local poly = {}
+    for i, p in ipairs(poly0) do poly[i] = p end
+    local n = #poly
+    if n < 4 then return poly end
+    local cur = 0
+    for i = 1, n do cur = cur + dist(poly[i], poly[i % n + 1]) end
+    local maxLen = cur * 1.02
+    for _ = 1, 1000 do
+        local moved = false
+        for i = 1, n - 2 do
+            for j = i + 2, n do
+                if not (i == 1 and j == n) then
+                    local a, b, c, d = poly[i], poly[i + 1], poly[j], poly[j % n + 1]
+                    if segCross(a, b, c, d) then
+                        local n1, n2 = dist(a, c), dist(b, d)
+                        local delta = n1 + n2 - dist(a, b) - dist(c, d)
+                        if n1 <= limit and n2 <= limit and cur + delta <= maxLen then
+                            local lo, hi = i + 1, j
+                            while lo < hi do poly[lo], poly[hi] = poly[hi], poly[lo]; lo = lo + 1; hi = hi - 1 end
+                            cur = cur + delta
+                            moved = true
+                            break
+                        end
+                    end
+                end
+            end
+            if moved then break end
+        end
+        if not moved then break end
+    end
+    return poly
+end
+
 -- pts: nodes in map percent; W,H: zone size in yards
 local function buildRoute(pts, W, H)
     local n = #pts
@@ -407,195 +489,146 @@ local function buildRoute(pts, W, H)
         return { stops = ns_, share = m / n, D = D, maxhop = 0, len = 0, open = false }
     end
 
-    -- tour over stops: nearest neighbour, 2-opt, or-opt (long hops cost 10x)
-    local DS = D + STOP_HOP_EXTRA -- stops sit up to R away from the nodes they cover, so allow that slack on stop-to-stop hops
-    local function cost(a, b)
-        local d = dist(S[a], S[b])
-        return d > DS and d * 10 or d
-    end
-    local start = 1
-    for i = 2, ns_ do if S[i][1] < S[start][1] then start = i end end
-    local tour, used = { start }, { [start] = true }
-    for _ = 2, ns_ do
-        local cur, bj, bd = tour[#tour], nil, math.huge
-        for j = 1, ns_ do
-            if not used[j] then
-                local d = cost(cur, j)
-                if d < bd then bd, bj = d, j end
-            end
-        end
-        tour[#tour + 1] = bj; used[bj] = true
-    end
-    local function tourCost(t)
-        local c = 0
-        for i = 1, #t do c = c + cost(t[i], t[i % #t + 1]) end
-        return c
-    end
-    if ns_ >= 4 then
-        local improved, iter = true, 0
-        while improved and iter < 100 do
-            improved = false; iter = iter + 1
-            for i = 1, ns_ - 1 do
-                for j = i + 1, ns_ do
-                    local a, b = tour[i], tour[i % ns_ + 1]
-                    local c, d = tour[j], tour[j % ns_ + 1]
-                    if a ~= c and b ~= c and a ~= d then
-                        if cost(a, c) + cost(b, d) - cost(a, b) - cost(c, d) < -1e-9 then
-                            local lo, hi = i + 1, j
-                            while lo < hi do tour[lo], tour[hi] = tour[hi], tour[lo]; lo = lo + 1; hi = hi - 1 end
-                            improved = true
-                        end
-                    end
-                end
-            end
-            -- or-opt: move a segment of 1..3 stops elsewhere
-            for seg = 1, math.min(3, ns_ - 3) do
-                for i = 1, ns_ do
-                    local cur = tourCost(tour)
-                    local segnodes, rest = {}, {}
-                    for k = 0, seg - 1 do segnodes[#segnodes + 1] = tour[(i + k - 1) % ns_ + 1] end
-                    for k = seg, ns_ - 1 do rest[#rest + 1] = tour[(i + k - 1) % ns_ + 1] end
-                    local bestT, bestC = nil, cur - 1e-9
-                    for pos = 1, #rest do
-                        for rev = 0, 1 do
-                            local t2 = {}
-                            for k = 1, pos do t2[#t2 + 1] = rest[k] end
-                            if rev == 0 then for k = 1, seg do t2[#t2 + 1] = segnodes[k] end
-                            else for k = seg, 1, -1 do t2[#t2 + 1] = segnodes[k] end end
-                            for k = pos + 1, #rest do t2[#t2 + 1] = rest[k] end
-                            local c = tourCost(t2)
-                            if c < bestC then bestC, bestT = c, t2 end
-                        end
-                    end
-                    if bestT then tour = bestT; improved = true end
-                end
+    -- walkable graph over the routed component (nodes within D), stops attached to nodes/stops within D
+    local V = {}
+    for i = 1, n do if comp[i] == best then V[#V + 1] = Q[i] end end
+    local nv = #V
+    for k = 1, ns_ do V[nv + k] = S[k] end
+    local nV = #V
+    local gadj = {}
+    for i = 1, nV do gadj[i] = {} end
+    for i = 1, nV do
+        for j = i + 1, nV do
+            local d = dist(V[i], V[j])
+            if d <= D then
+                gadj[i][#gadj[i] + 1] = { j, d }; gadj[j][#gadj[j] + 1] = { i, d }
             end
         end
     end
-
-    -- cut at long hops; keep the stretch covering the most nodes
-    local longs = {}
-    for i = 1, ns_ do
-        if dist(S[tour[i]], S[tour[i % ns_ + 1]]) > DS then longs[#longs + 1] = i end
-    end
-    if os.getenv("RDEBUG") then io.stderr:write(string.format("m=%d stops=%d longs=%d D=%d\n", m, ns_, #longs, D)) end
-    local seq, open = {}, false
-    if #longs == 0 then
-        for i = 1, ns_ do seq[i] = S[tour[i]] end
-    else
-        open = true
-        local bestStretch, bestK = nil, -1
-        for li = 1, #longs do
-            local from = longs[li] % ns_ + 1 -- first stop after this long hop
-            local to = longs[li % #longs + 1] -- last stop before the next long hop
-            local stretch = {}
-            local idx = from
-            while true do
-                stretch[#stretch + 1] = S[tour[idx]]
-                if idx == to then break end
-                idx = idx % ns_ + 1
-            end
-            local k = coveredBy(stretch)
-            if k > bestK then bestK, bestStretch = k, stretch end
-        end
-        seq = bestStretch
-    end
-    local kcov, covList = coveredBy(seq)
-    local maxhop = 0
-    for i = 1, #seq - (open and 1 or 0) do
-        local d = dist(seq[i], seq[i % #seq + 1])
-        if #seq > 1 and d > maxhop then maxhop = d end
-    end
-    if #seq < 2 then
-        return { stops = #seq, share = kcov / n, D = D, maxhop = 0, len = 0, open = open }
-    end
-    if #seq == 2 then open = true end
-    local nstops = #seq
-    -- make it a loop: Dijkstra return leg over the node graph, penalising nodes near the outward path
-    local back, retMax, retFail
-    if open and #seq >= 2 then
-        local V = {}
-        for i = 1, n do if comp[i] == best then V[#V + 1] = Q[i] end end
-        local nv = #V
-        local sIdx, tIdx = nv + 1, nv + 2 -- temporary vertices: first stop (target) / last stop (source)
-        V[sIdx] = seq[1]; V[tIdx] = seq[#seq]
-        local function nearOut(p)
-            local b = math.huge
-            for i = 1, #seq - 1 do b = math.min(b, segDist(p, seq[i], seq[i + 1])) end
-            return b
-        end
-        local pen = {}
-        for i = 1, nv do pen[i] = nearOut(V[i]) <= R / 2 end
-        local function w(a, b)
-            local d = dist(V[a], V[b])
-            if d > D then return nil end
-            return (pen[a] or pen[b]) and d * 4 or d
-        end
-        local src, dst = tIdx, sIdx
+    local function dijkstra(src)
         local dd, prev, done = {}, {}, {}
-        for i = 1, nv + 2 do dd[i] = math.huge end
+        for i = 1, nV do dd[i] = math.huge end
         dd[src] = 0
         while true do
             local u, ud = nil, math.huge
-            for i = 1, nv + 2 do if not done[i] and dd[i] < ud then u, ud = i, dd[i] end end
-            if not u or u == dst then break end
+            for i = 1, nV do if not done[i] and dd[i] < ud then u, ud = i, dd[i] end end
+            if not u then break end
             done[u] = true
-            for v = 1, nv + 2 do
-                if not done[v] and v ~= u and not ((u > nv) and (v > nv)) then
-                    local c = w(u, v)
-                    if c and ud + c < dd[v] then dd[v] = ud + c; prev[v] = u end
+            for _, e in ipairs(gadj[u]) do
+                local v = e[1]
+                if not done[v] and ud + e[2] < dd[v] then dd[v] = ud + e[2]; prev[v] = u end
+            end
+        end
+        return dd, prev
+    end
+    local DD, PREV = {}, {}
+    for k = 1, ns_ do DD[k], PREV[k] = dijkstra(nv + k) end
+    local function G(a, b) return DD[a][nv + b] end
+
+    -- closed tour over the stops with graph distances: NN + 2-opt + or-opt, best of several starts
+    local function tourCost(t)
+        local c = 0
+        for i = 1, #t do c = c + G(t[i], t[i % #t + 1]) end
+        return c
+    end
+    local function solve(start)
+        local tour, used = { start }, { [start] = true }
+        for _ = 2, ns_ do
+            local cur, bj, bd = tour[#tour], nil, math.huge
+            for j = 1, ns_ do
+                if not used[j] and G(cur, j) < bd then bd, bj = G(cur, j), j end
+            end
+            tour[#tour + 1] = bj; used[bj] = true
+        end
+        if ns_ >= 4 then
+            local improved, iter = true, 0
+            while improved and iter < 100 do
+                improved = false; iter = iter + 1
+                for i = 1, ns_ - 1 do
+                    for j = i + 1, ns_ do
+                        local a, b = tour[i], tour[i % ns_ + 1]
+                        local c, d = tour[j], tour[j % ns_ + 1]
+                        if a ~= c and b ~= c and a ~= d then
+                            if G(a, c) + G(b, d) - G(a, b) - G(c, d) < -1e-9 then
+                                local lo, hi = i + 1, j
+                                while lo < hi do tour[lo], tour[hi] = tour[hi], tour[lo]; lo = lo + 1; hi = hi - 1 end
+                                improved = true
+                            end
+                        end
+                    end
+                end
+                for seg = 1, math.min(3, ns_ - 3) do
+                    for i = 1, ns_ do
+                        local cur = tourCost(tour)
+                        local segnodes, rest = {}, {}
+                        for k = 0, seg - 1 do segnodes[#segnodes + 1] = tour[(i + k - 1) % ns_ + 1] end
+                        for k = seg, ns_ - 1 do rest[#rest + 1] = tour[(i + k - 1) % ns_ + 1] end
+                        local bestT, bestC = nil, cur - 1e-9
+                        for pos = 1, #rest do
+                            for rev = 0, 1 do
+                                local t2 = {}
+                                for k = 1, pos do t2[#t2 + 1] = rest[k] end
+                                if rev == 0 then for k = 1, seg do t2[#t2 + 1] = segnodes[k] end
+                                else for k = seg, 1, -1 do t2[#t2 + 1] = segnodes[k] end end
+                                for k = pos + 1, #rest do t2[#t2 + 1] = rest[k] end
+                                local c = tourCost(t2)
+                                if c < bestC then bestC, bestT = c, t2 end
+                            end
+                        end
+                        if bestT then tour = bestT; improved = true end
+                    end
                 end
             end
         end
-        if dd[dst] < math.huge then
-            local leg = {}
-            local v = prev[dst]
-            while v and v ~= src do table.insert(leg, 1, V[v]); v = prev[v] end
-            -- leg runs from the last stop to the first stop (exclusive of both)
-            local walk = { seq[#seq] }
-            for _, p in ipairs(leg) do walk[#walk + 1] = p end
-            walk[#walk + 1] = seq[1]
-            retMax = 0
-            for i = 1, #walk - 1 do retMax = math.max(retMax, dist(walk[i], walk[i + 1])) end
-            local tot, near = 0, 0
-            for i = 1, #walk - 1 do
-                local a, b = walk[i], walk[i + 1]
-                local L = dist(a, b)
-                local k = math.max(1, math.ceil(L / 20))
-                for s = 0, k - 1 do
-                    local t = (s + 0.5) / k
-                    local p = { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t }
-                    tot = tot + 1
-                    if nearOut(p) <= R / 2 then near = near + 1 end
-                end
-            end
-            back = tot > 0 and near / tot or 0
-            local newseq = {}
-            for _, p in ipairs(seq) do newseq[#newseq + 1] = p end
-            for _, p in ipairs(leg) do newseq[#newseq + 1] = p end
-            seq = newseq
-            open = false
-            maxhop = math.max(maxhop, retMax)
-        else
-            retFail = true
-        end
+        return tour
+    end
+    local starts, seenStart = {}, {}
+    for _, s in ipairs { 1, ns_ // 4 + 1, ns_ // 2 + 1, (3 * ns_) // 4 + 1, ns_ } do
+        if not seenStart[s] then seenStart[s] = true; starts[#starts + 1] = s end
+    end
+    local tour, tourBest
+    for _, s in ipairs(starts) do
+        local t = solve(s)
+        local c = tourCost(t)
+        if not tourBest or c < tourBest then tour, tourBest = t, c end
     end
 
-    -- smooth (2 Chaikin passes, else 1, else 0), simplify, verify coverage within R + SIMPLIFY
+    -- expand every hop into its graph path
+    local raw = { S[tour[1]] }
+    for i = 1, ns_ do
+        local a, b = tour[i], tour[i % ns_ + 1]
+        local path, v = {}, nv + b
+        while v and v ~= nv + a do table.insert(path, 1, V[v]); v = PREV[a][v] end
+        for _, p in ipairs(path) do
+            local last = raw[#raw]
+            if p[1] ~= last[1] or p[2] ~= last[2] then raw[#raw + 1] = p end
+        end
+    end
+    if #raw > 1 and raw[#raw][1] == raw[1][1] and raw[#raw][2] == raw[1][2] then raw[#raw] = nil end
+
+    local line = untangle(raw, D)
+    local maxseg = 0
     local final
     for iters = 2, 0, -1 do
-        local line = seq
-        for _ = 1, iters do line = chaikin(line, not open) end
-        line = simplify(line, not open, SIMPLIFY)
-        if covers(line, not open, covList, R + SIMPLIFY) then final = line; smoothed = iters; break end
+        local l = line
+        for _ = 1, iters do l = chaikin(l, true) end
+        l = simplify(l, true, SIMPLIFY)
+        if covers(l, true, N, R + SIMPLIFY) then final = l; break end
     end
+    do
+        local ms = 0
+        for i = 1, #final do ms = math.max(ms, dist(final[i], final[i % #final + 1])) end
+        local again = untangle(final, math.max(D, ms))
+        if covers(again, true, N, R + SIMPLIFY) then final = again end
+    end
+    local met = metrics(final)
     local flat = {}
     for _, p in ipairs(final) do
         flat[#flat + 1] = string.format("%.1f", p[1] / W * 100)
         flat[#flat + 1] = string.format("%.1f", p[2] / H * 100)
     end
-    return { flat = flat, D = D, stops = nstops, share = kcov / n, open = open, maxhop = maxhop, back = back, retMax = retMax, retFail = retFail,
-        len = polyLen(final, not open), pts = #final }
+    return { flat = flat, D = D, stops = ns_, share = m / n, open = false, maxhop = met.maxseg,
+        len = met.len, pts = #final, crossings = met.crossings, overlap = met.overlap, stopsY = S, polyY = final }
 end
 
 ---------------------------------------------------------------- Build
@@ -620,7 +653,9 @@ end
 
 local report = {}
 local nroutes, nopen, globalMax = 0, 0, 0
-local nret, retList, failList, retMaxAll = 0, {}, {}, 0
+local metricRows = {}
+local reviewRoutes = {}
+local function r1(v) return string.format("%.1f", v) end
 local out = { "-- Generated by tools/build_routes.lua from Wowhead WoW: Forever node data (wowhead.com/forever). Do not edit.",
     "local _, ns = ...", "ns.Routes = {" }
 
@@ -677,28 +712,42 @@ end
 
 for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
     out[#out + 1] = "  " .. prof .. " = {"
-    for _, band in ipairs(BANDS[prof]) do
+    for bi, band in ipairs(BANDS[prof]) do
         local from, to = band[1], band[2]
         local list = pickZones(prof, band)
         out[#out + 1] = string.format("    { from = %d, to = %d, zones = {", from, to)
         local line = { string.format("%s %d-%d:", prof, from, to) }
-        for _, c in ipairs(list) do
+        for zi, c in ipairs(list) do
             local z = zones[c.area]
             if SKILL[prof] then
                 local sz = assert(size[z.map], 'no yard size for uiMap ' .. z.map)
                 local r = buildRoute(c.pts, sz[1], sz[2])
-                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.back and string.format(" back = %.2f,", r.back) or "", r.open and " open = true," or "") .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
+                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,", r.share, r.stops, math.floor(r.len + 0.5)) .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
                 out[#out + 1] = string.format('        { area = %d, map = %d, side = "%s", nodes = %d, guide = %s,%s },',
                     c.area, z.map, z.side, c.nodes, tostring(c.guide and true or false), rs)
                 if r then
                     nroutes = nroutes + 1
-                    if r.open then nopen = nopen + 1 end
-                    if r.back then nret = nret + 1; retList[#retList + 1] = string.format("%s %s %d-%d back=%.2f maxhop=%d", prof, z.name, from, to, r.back, math.floor(r.retMax + 0.5)); if r.retMax > retMaxAll then retMaxAll = r.retMax end end
-                    if r.retFail then failList[#failList + 1] = string.format("%s %s %d-%d", prof, z.name, from, to) end
+                    do
+                        local W, H = sz[1], sz[2]
+                        local nd, cov = {}, {}
+                        for ni, p in ipairs(c.pts) do
+                            nd[ni] = string.format("[%s,%s,%q]", r1(p[1]), r1(p[2]), p[3] or "")
+                            local py = { p[1] * W / 100, p[2] * H / 100 }
+                            local pl, best = r.polyY, math.huge
+                            for k = 1, #pl do best = math.min(best, segDist(py, pl[k], pl[k % #pl + 1])) end
+                            if best <= R then cov[#cov + 1] = ni - 1 end
+                        end
+                        local st = {}
+                        for _, p in ipairs(r.stopsY) do st[#st + 1] = r1(p[1] / W * 100); st[#st + 1] = r1(p[2] / H * 100) end
+                        reviewRoutes[#reviewRoutes + 1] = { rec = r, W = W, H = H, nd = nd, cov = cov, st = st, prof = prof, from = from, to = to,
+                            id = string.format("%s-%d-%d", prof, bi, zi), z = z, guide = c.guide and true or false, nodes = c.nodes }
+                    end
+                    local check = r.crossings * 3 + r.overlap * 10 + (r.maxhop > 300 and 2 or 0) + (r.share < 0.3 and 1 or 0)
+                    metricRows[#metricRows + 1] = { check = check, text = string.format("%-9s %3d-%-3d %-22s len=%5d share=%.2f stops=%2d cross=%d overlap=%.2f maxhop=%3d check=%.1f", prof, from, to, z.name, math.floor(r.len + 0.5), r.share, r.stops, r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check), crossings = r.crossings }
                     if r.maxhop > globalMax then globalMax = r.maxhop end
                 end
                 line[#line + 1] = string.format("%s%s[%s] n=%d%s", z.name, c.guide and "*" or "", z.side, c.nodes,
-                    r and string.format(" (stops %d, len %d yd, share %.2f, D=%d, maxhop %d yd%s%s)", r.stops, math.floor(r.len + 0.5), r.share, r.D, math.floor(r.maxhop + 0.5), r.open and ", OPEN" or "", r.flat and "" or ", NO LINE") or " (no route)")
+                    r and string.format(" (stops %d, len %d yd, share %.2f, D=%d, maxseg %d yd, cross %d, overlap %.2f)", r.stops, math.floor(r.len + 0.5), r.share, r.D, math.floor(r.maxhop + 0.5), r.crossings or 0, r.overlap or 0) or " (no route)")
             else
                 out[#out + 1] = string.format('        { area = %d, map = %d, side = "%s" },', c.area, z.map, z.side)
                 line[#line + 1] = z.name .. "[" .. z.side .. "]"
@@ -718,10 +767,33 @@ f:write(text); f:close()
 
 print(table.concat(report, "\n"))
 print(string.format("\nroutes=%d open=%d max stop hop overall=%d yd", nroutes, nopen, math.floor(globalMax + 0.5)))
-print(string.format("return legs=%d, max return hop=%d yd", nret, math.floor(retMaxAll + 0.5)))
-print("back>0.5: " .. table.concat((function() local t = {} for _, l in ipairs(retList) do if tonumber(l:match("back=([%d.]+)")) > 0.5 then t[#t + 1] = l end end return t end)(), "; "))
-print("return failed (kept open): " .. table.concat(failList, "; "))
-if os.getenv("RDEBUG") then print(table.concat(retList, "\n")) end
+do
+    local parts = {}
+    local date = os.date("%Y-%m-%d")
+    for _, e in ipairs(reviewRoutes) do
+        local r = e.rec
+        local check = r.crossings * 3 + r.overlap * 10 + (r.maxhop > 300 and 2 or 0) + (r.share < 0.3 and 1 or 0)
+        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"route":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
+            e.id, e.prof, e.from, e.to, e.z.area, e.z.map, e.z.name, e.z.side, tostring(e.guide), math.floor(r.len + 0.5), r.share, r.stops,
+            r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check, r.D, R, math.floor(e.W + 0.5), math.floor(e.H + 0.5),
+            table.concat(r.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
+    end
+    os.execute('mkdir "' .. (ROOT .. "/tools/review"):gsub("/", "\\") .. '" 2>nul')
+    local rf = assert(io.open(ROOT .. "/tools/review/review.json", "wb"))
+    local body = '{"generated":"' .. date .. '","routes":[\n' .. table.concat(parts, ",\n") .. "\n]}\n"
+    rf:write(body); rf:close()
+    print(string.format("Wrote tools/review/review.json (%d bytes)", #body))
+end
+table.sort(metricRows, function(a, b) if a.check ~= b.check then return a.check > b.check end return a.text < b.text end)
+do
+    local lines, zero = {}, 0
+    for _, r in ipairs(metricRows) do lines[#lines + 1] = r.text; if r.crossings == 0 then zero = zero + 1 end end
+    local rf = assert(io.open(ROOT .. "/tools/data/route-report.txt", "wb"))
+    rf:write("maxhop = longest segment of the final loop polyline (yd); check = crossings*3 + overlap*10 + (maxhop>300 and 2 or 0) + (share<0.3 and 1 or 0)\n")
+    rf:write(table.concat(lines, "\n"), "\n"); rf:close()
+    print(string.format("routes with 0 crossings: %d of %d", zero, #metricRows))
+    print("top 15 by check score:\n" .. table.concat(lines, "\n", 1, math.min(15, #lines)))
+end
 print(string.format("\nWrote Data/Routes.lua (%d bytes)", #text))
 local um = {}
 for n in pairs(unmatched) do um[#um + 1] = n end
