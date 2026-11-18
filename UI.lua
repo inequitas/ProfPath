@@ -604,22 +604,64 @@ local function renderStepDetail(st)
     y = y + f:GetStringHeight() + 10
 end
 
--- Mining levels mostly by mining nodes, which no recipe plan can show: give the ore route.
-local function miningNote(prof)
+-- Gathering professions (Mining, Herbalism, Skinning) level mostly by gathering, which no recipe
+-- plan can show. Returns the kind ("mining"...) or nil.
+local function gatherKind(prof)
     local G = ns.Gather
-    if not (G and prof.skillLine and G.lines[prof.skillLine] == "mining") then return end
-    local parts = {}
-    for _, r in ipairs(G.miningRoute) do
-        if r[2] > (prof.rank or 0) then parts[#parts + 1] = ("%s %d-%d"):format(itemName(r[3]), r[1], r[2]) end
+    return G and prof.skillLine and G.lines[prof.skillLine] or nil
+end
+
+-- What to gather at your skill, as one paragraph.
+local function gatherNote(prof)
+    local G, kind, rank = ns.Gather, gatherKind(prof), prof.rank or 0
+    if not kind then return end
+    local text
+    if kind == "mining" then
+        local parts = {}
+        for _, r in ipairs(G.miningRoute) do
+            if r[2] > rank then parts[#parts + 1] = ("%s %d-%d"):format(itemName(r[3]), r[1], r[2]) end
+        end
+        text = "|cffffd100Mining levels mostly by mining ore nodes:|r " .. table.concat(parts, ", ")
+            .. ". Smelting gives extra points; recipes here use ore you mine yourself when the auction house has none."
+    elseif kind == "herbalism" then
+        local now, nextReq, nextNames = {}, nil, {}
+        for id, g in pairs(G.items) do
+            if g[1] == "herbalism" then
+                if g[2] <= rank and g[2] > rank - 50 then now[#now + 1] = { g[2], itemName(id) } end
+                if g[2] > rank and (not nextReq or g[2] < nextReq) then nextReq = g[2] end
+            end
+        end
+        for id, g in pairs(G.items) do
+            if g[1] == "herbalism" and g[2] == nextReq then nextNames[#nextNames + 1] = itemName(id) end
+        end
+        table.sort(now, function(a, b) return a[1] > b[1] end)
+        local names = {}
+        for k = 1, math.min(4, #now) do names[k] = now[k][2] end
+        text = "|cffffd100Herbalism levels by picking herbs.|r"
+            .. (#names > 0 and (" Best for you now: " .. table.concat(names, ", ") .. ".") or "")
+            .. (nextReq and (" At %d you can pick %s."):format(nextReq, table.concat(nextNames, " and ")) or "")
+    elseif kind == "skinning" then
+        local maxLevel = rank < 100 and (10 + math.floor(rank / 10)) or math.floor(rank / 5)
+        text = ("|cffffd100Skinning levels by skinning beasts.|r At %d you can skin creatures up to about level "
+            .. "%d; the closer to that level, the more often you get a point."):format(rank, maxLevel)
     end
-    if #parts == 0 then return end
-    para("|cffffd100Mining levels mostly by mining ore nodes:|r " .. table.concat(parts, ", ")
-        .. ". Smelting gives extra points; the plan below uses ore you mine yourself when the auction house has none.")
+    if text then para(text) end
+    return kind
 end
 
 local function renderPlan(state)
     local prof, res, info = state.prof, state.result, state.info
-    miningNote(prof)
+    local kind = gatherKind(prof)
+    -- A gathering profession with no crafting route: say so plainly instead of "not enough gold".
+    if kind and (res.broke or not res.ok or #res.steps == 0) and not (res.ok and #res.steps == 0
+            and (prof.rank or 0) >= (state.target or 0)) then
+        stepTitle(2, "Nothing to buy: " .. (ns.Gather.label[kind] or "this profession") .. " levels by gathering",
+            "Crafting can't level it from here, so there is no shopping list. Here is what to gather instead.")
+        gatherNote(prof)
+        button("<  Back to Prepare", 4, 180, function() UI.setTab(1) end)
+        y = y + 32
+        return
+    end
     if res.broke then
         local b = state.budget
         stepTitle(2, "Not enough gold for the next point",
@@ -632,10 +674,8 @@ local function renderPlan(state)
         return
     end
     if not res.ok then
-        local mining = ns.Gather and prof.skillLine and ns.Gather.lines[prof.skillLine] == "mining"
-        stepTitle(2, "No path yet", mining
-            and ("Smelting alone can't take you past %d. Mine ore nodes (see above) to keep leveling."):format(res.stuckAt or 0)
-            or ("Stuck at skill %d: every recipe that still gives points has an unpriced material."):format(res.stuckAt or 0))
+        stepTitle(2, "No path yet",
+            ("Stuck at skill %d: every recipe that still gives points has an unpriced material."):format(res.stuckAt or 0))
         button("<  Back to Prepare", 4, 180, function() UI.setTab(1) end)
         y = y + 32
         return
@@ -653,6 +693,7 @@ local function renderPlan(state)
             or ("The cheapest route with current prices, %d crafts in total. Click a step to see what it needs."):format(crafts))
     lockBanner(state)
     alertBanner(state)
+    gatherNote(prof)
 
     local spend = (res.cash or 0) + (res.learnTotal or 0)
     cards({
@@ -701,10 +742,9 @@ local function renderPlan(state)
         end
     end
 
-    local isMining = ns.Gather and prof.skillLine and ns.Gather.lines[prof.skillLine] == "mining"
-    if state.partialStop and isMining then
+    if state.partialStop and kind then
         y = y + 4
-        para(("|cffff8800Smelting stops giving points at %d. Mine ore nodes (see above) to keep leveling.|r")
+        para(("|cffff8800Crafting stops giving points at %d. From there, gathering (see above) is how you level.|r")
             :format(state.partialStop))
     elseif state.partialStop then
         y = y + 4
@@ -737,6 +777,13 @@ end
 local function renderDo(state)
     local prof, res = state.prof, state.result
     if not res.ok or #res.steps == 0 then
+        local kind = gatherKind(prof)
+        if kind then
+            stepTitle(3, "Go gathering", (ns.Gather.label[kind] or "This profession")
+                .. " levels by gathering: nothing to buy or craft right now.")
+            gatherNote(prof)
+            return
+        end
         stepTitle(3, "Nothing to do yet", "Finish Prepare and check the Plan first.")
         return
     end
