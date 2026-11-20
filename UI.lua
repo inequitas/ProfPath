@@ -686,19 +686,44 @@ local function zoneList(prof, kind)
     end
     table.sort(mains, function(a, b) if a.score ~= b.score then return a.score < b.score end return a.i < b.i end)
     -- Up to 4 zones; a zone's hot spots (mines, dense clusters) appear under it once its route is shown.
+    -- The most reachable zone is shown; the others sit in a closed "Other viable zones" list.
+    -- Hot spots are one info line per zone (they're drawn in yellow with the zone's route).
     local rows = {}
-    for k = 1, math.min(4, #mains) do
-        local m = mains[k]
+    local function addZone(m)
         rows[#rows + 1] = { z = m.z, note = m.note }
-        if active and active.map == m.z.map then
-            for _, o in ipairs(band.zones) do
-                if o.hotspot and o.area == m.z.area then rows[#rows + 1] = { z = o } end
+        local n, caves = 0, {}
+        for _, o in ipairs(band.zones) do
+            if o.hotspot and o.area == m.z.area then
+                n = n + 1
+                if o.cave and o.entrance then
+                    caves[#caves + 1] = ("%s (cave), entrance at %.0f, %.0f"):format(o.name or "cave", o.entrance[1], o.entrance[2])
+                end
             end
         end
+        if n > 0 then
+            local t = ("%d hot spot%s nearby (mines, dense clusters): yellow on the map when you show this route")
+                :format(n, n > 1 and "s" or "")
+            if #caves > 0 then t = t .. ". " .. table.concat(caves, "; ") end
+            rows[#rows + 1] = { info = t }
+        end
+    end
+    if mains[1] then addZone(mains[1]) end
+    if #mains > 1 then
+        rows[#rows + 1] = { toggle = true, count = #mains - 1 }
+        if UI.zonesOpen then for k = 2, math.min(6, #mains) do addZone(mains[k]) end end
     end
     for _, row in ipairs(rows) do
         local z = row.z
-        do
+        if row.info then
+            local f = text("GameFontDisableSmall", 26, y, CONTENT - 40, row.info, "LEFT", true)
+            y = y + f:GetStringHeight() + 8
+        elseif row.toggle then
+            button((UI.zonesOpen and "- " or "+ ") .. ("Other viable zones (%d)"):format(row.count), 10, 220, function()
+                UI.zonesOpen = not UI.zonesOpen
+                UI.show(lastState)
+            end)
+            y = y + 30
+        else
             local zone = ns.Zones and ns.Zones[z.area]
             local name = z.hotspot and (z.cave and ((z.name or "Cave or mine") .. " (cave, ore inside)") or "Hot spot (dense cluster)")
                 or (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
