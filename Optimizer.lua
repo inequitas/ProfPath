@@ -386,7 +386,27 @@ end
 function O.optimize(ctx)
     local free = ctx.free or (ctx.ownedFree == true and ctx.owned) or {}
     local a = optimizeWith(ctx, true)
-    if not next(free) then return a end
+    if not next(free) or not a.ok then
+        if a.ok or not next(free) then return a end
+    else
+        -- The second pass only matters when this plan leans on owned items that don't cover what it
+        -- needs (it priced them at 0 while the rest must be bought). Otherwise it's already right.
+        local partial = false
+        for _, sh in ipairs(a.shopping or {}) do
+            local f = free[sh.itemID] or 0
+            if f > 0 and sh.needed > f then partial = true; break end
+        end
+        if not partial then
+            for _, it in ipairs(a.intermediates or {}) do
+                for _, rg in ipairs(it.recipe.reagents or {}) do
+                    local f = free[rg[1]] or 0
+                    if f > 0 and rg[2] * it.crafts > f then partial = true; break end
+                end
+                if partial then break end
+            end
+        end
+        if not partial then return a end
+    end
     local b = optimizeWith(ctx, false)
     if not a.ok then return b end
     if not b.ok then return a end
