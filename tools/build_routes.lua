@@ -101,10 +101,10 @@ local STARTERS = { "Elwynn Forest", "Dun Morogh", "Teldrassil", "Durotar", "Mulg
 
 local BANDS = {
     mining = {
-        { 1, 65, STARTERS, true }, { 65, 125, { "Ashenvale", "Redridge Mountains", "The Barrens", "Thousand Needles" } },
+        { 1, 65, STARTERS, true, { "Darkshore" } }, { 65, 125, { "Ashenvale", "Redridge Mountains", "The Barrens", "Thousand Needles" }, false, { "Hillsbrad Foothills" } },
         { 125, 175, { "Arathi Highlands", "Desolace", "Stranglethorn Vale", "Thousand Needles" } },
         { 175, 225, { "Azshara", "Tanaris", "The Hinterlands" } },
-        { 225, 275, {} }, { 275, 300, {} },
+        { 225, 275, {}, false, { "Un'Goro Crater", "Burning Steppes" } }, { 275, 300, {}, false, { "Un'Goro Crater", "Burning Steppes" } },
     },
     herbalism = {
         { 1, 70, STARTERS, true }, { 70, 115, { "Darkshore", "Loch Modan", "Silverpine Forest" } },
@@ -134,6 +134,14 @@ local HOP_YARDS = { 180, 220, 260 } -- max hop between linked nodes/stops, tried
 local MAX_SEG = 400                 -- yards: longest straight segment (also the longest corridor link)
 local CORRIDOR = 160               -- yards: a segment must stay within this distance of a useful node
 UNTANGLE_GROWTH = 1.15
+local WATER_DEPTH = 4                -- yards of filled depth that count as water
+local WATER_CORE_DEPTH = 8           -- a lake needs a core at least this deep (WDL noise makes 4-5 yd pits everywhere)
+local WATER_MAX_DEPTH = 45          -- deeper basins are valleys that drain outside the map, not lakes
+local WATER_MAX_CELLS = 1500
+local WATER_MIN_CELLS = 15          -- ignore puddles smaller than this many cells
+local STEEP_PASS = 1.7               -- a thin band (<= PASS_CELLS cells) of slopes between STEEP and this is a passable ramp
+local PASS_CELLS = 3                -- 60 yd
+local PASS_COST = 4
 local SPIKE_YD = 40                  -- steep stretches shorter than this are ignored (a segment is blocked only when sustained)
 local STEEP_COST = 1.3              -- grid-path cost multiplier within 40 yd of steep ground
 local PATH_CAP = 600                -- yards: longest single straight piece of a path
@@ -463,6 +471,160 @@ local function polyMaxSlope(poly, W, H, uiMap)
     return worst
 end
 
+-- water detection: priority-flood depression filling on the 20 yd height grid of a zone
+local waterCache = {}
+local function waterInfo(uiMap)
+    if waterCache[uiMap] ~= nil then return waterCache[uiMap] or nil end
+    local f = terrain.zone(uiMap)
+    local sz = size[uiMap]
+    if not f or not sz then waterCache[uiMap] = false; return nil end
+    local W, H = sz[1], sz[2]
+    local cols = math.ceil(W / GRID) + 2
+    local nx, ny = math.ceil(W / GRID), math.ceil(H / GRID)
+    local NOD = -1e9
+    local hgt, filled, closed = {}, {}, {}
+    for cy = 0, ny - 1 do
+        for cx = 0, nx - 1 do
+            hgt[cy * cols + cx] = f((cx + 0.5) * GRID / W * 100, (cy + 0.5) * GRID / H * 100) or false
+        end
+    end
+    local hd, hk, hn = {}, {}, 0
+    local function push(d, k)
+        hn = hn + 1
+        local i = hn
+        while i > 1 do
+            local p = i // 2
+            if hd[p] <= d then break end
+            hd[i], hk[i] = hd[p], hk[p]; i = p
+        end
+        hd[i], hk[i] = d, k
+    end
+    for cy = 0, ny - 1 do
+        for cx = 0, nx - 1 do
+            local k = cy * cols + cx
+            local h = hgt[k]
+            if cx == 0 or cy == 0 or cx == nx - 1 or cy == ny - 1 or h == false then
+                closed[k] = true; push(h or NOD, k)
+            end
+        end
+    end
+    while hn > 0 do
+        local lvl, key = hd[1], hk[1]
+        local ld, lk = hd[hn], hk[hn]
+        hn = hn - 1
+        if hn > 0 then
+            local i = 1
+            while true do
+                local c = i * 2
+                if c > hn then break end
+                if c < hn and hd[c + 1] < hd[c] then c = c + 1 end
+                if hd[c] >= ld then break end
+                hd[i], hk[i] = hd[c], hk[c]; i = c
+            end
+            hd[i], hk[i] = ld, lk
+        end
+        filled[key] = lvl
+        local x, y = key % cols, key // cols
+        for dy = -1, 1 do
+            for dx = -1, 1 do
+                if dx ~= 0 or dy ~= 0 then
+                    local px, py = x + dx, y + dy
+                    if px >= 0 and py >= 0 and px < nx and py < ny then
+                        local nk = py * cols + px
+                        if not closed[nk] then
+                            closed[nk] = true
+                            local h = hgt[nk]
+                            push(h and math.max(h, lvl) or NOD, nk)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local depth, wet, lab, total, nwet, comps = {}, {}, {}, 0, 0, {}
+    local core, shallow = {}, {}
+    for k, h in pairs(hgt) do
+        if h then
+            total = total + 1
+            local d = filled[k] - h
+            depth[k] = d
+            if d >= WATER_CORE_DEPTH and d <= WATER_MAX_DEPTH then core[k] = true
+            elseif d >= WATER_DEPTH and d < WATER_CORE_DEPTH then shallow[k] = true end
+        end
+    end
+    -- keep only the thick part of the core (everything within 40 yd must also be core): lakes are wide, drainage
+    -- artefacts of the coarse height grid are thin
+    local thick = {}
+    for k in pairs(core) do
+        local x, y = k % cols, k // cols
+        local ok = true
+        for dy = -2, 2 do
+            for dx = -2, 2 do
+                if dx * dx + dy * dy <= 4 and not core[(y + dy) * cols + x + dx] then ok = false; break end
+            end
+            if not ok then break end
+        end
+        if ok then thick[k] = true end
+    end
+    local coreAll = core
+    core = thick
+    -- lake cores: 8-connected groups of thick cells that are not huge
+    for k in pairs(core) do
+        if not lab[k] then
+            local comp, stack = {}, { k }
+            lab[k] = true
+            local md = 0
+            while #stack > 0 do
+                local u = table.remove(stack); comp[#comp + 1] = u
+                if depth[u] > md then md = depth[u] end
+                local x, y = u % cols, u // cols
+                for dy = -1, 1 do for dx = -1, 1 do
+                    if dx ~= 0 or dy ~= 0 then
+                        local nk = (y + dy) * cols + x + dx
+                        if core[nk] and not lab[nk] then lab[nk] = true; stack[#stack + 1] = nk end
+                    end
+                end end
+            end
+            local okc = #comp >= WATER_MIN_CELLS and #comp <= WATER_MAX_CELLS
+            local x0, y0, x1, y1 = math.huge, math.huge, -1, -1
+            for _, u in ipairs(comp) do
+                local ux, uy = u % cols, u // cols
+                if ux < x0 then x0 = ux end; if ux > x1 then x1 = ux end
+                if uy < y0 then y0 = uy end; if uy > y1 then y1 = uy end
+            end
+            comps[#comps + 1] = { cells = #comp, maxd = md, ok = okc,
+                bbox = string.format("(%.0f-%.0f,%.0f-%.0f)", x0 * GRID / W * 100, (x1 + 1) * GRID / W * 100, y0 * GRID / H * 100, (y1 + 1) * GRID / H * 100) }
+            if okc then for _, u in ipairs(comp) do wet[u] = true end end
+        end
+    end
+    -- shore band: core/shallow cells (>= 4 yd) within 3 cells of the lake core
+    for k in pairs(coreAll) do shallow[k] = true end
+    for _ = 1, 3 do
+        local add = {}
+        for k in pairs(shallow) do
+            if not wet[k] then
+                local x, y = k % cols, k // cols
+                for dy = -1, 1 do
+                    for dx = -1, 1 do
+                        if wet[(y + dy) * cols + x + dx] then add[#add + 1] = k end
+                    end
+                end
+            end
+        end
+        for _, k in ipairs(add) do wet[k] = true end
+    end
+    for _ in pairs(wet) do nwet = nwet + 1 end
+    local info = { wet = wet, depth = depth, hgt = hgt, filled = filled, cols = cols, nx = nx, ny = ny, W = W, H = H,
+        share = total > 0 and nwet / total or 0, cells = total, wetCells = nwet, comps = comps }
+    waterCache[uiMap] = info
+    return info
+end
+local function waterAtPct(info, mx, my) -- map percent -> isWater, depth, height
+    local cx, cy = math.floor(mx / 100 * info.W / GRID), math.floor(my / 100 * info.H / GRID)
+    local k = cy * info.cols + cx
+    return info.wet[k] == true, info.depth[k] or 0, info.hgt[k]
+end
+
 local function douglasValid(line, tol, ok)
     local n = #line
     if n < 3 then return line end
@@ -542,8 +704,9 @@ local function buildRoute(pts, W, H, circles, uiMap)
         end
     end
     -- cell state: 0 blocked (out of range, circle, no height data), 1 walkable, 2 steep (slope >= STEEP)
-    local function cellState(cx, cy)
-        if cx < 0 or cy < 0 then return 0 end
+    local slopeMemo = {}
+    local function rawState(cx, cy)
+        if cx < 0 or cy < 0 or (cx + 0.5) * GRID >= W or (cy + 0.5) * GRID >= H then return 0 end -- outside the zone map
         local key = cy * cols + cx
         local v = memo[key]
         if v ~= nil then return v end
@@ -552,16 +715,53 @@ local function buildRoute(pts, W, H, circles, uiMap)
             if not useT then v = 1
             else
                 local px, py = (cx + 0.5) * GRID, (cy + 0.5) * GRID
-                if not inCircles(circles, { px, py }) then
+                local wi = waterInfo(uiMap)
+                if wi and wi.wet[key] then v = 3
+                elseif not inCircles(circles, { px, py }) then
                     local s = terrain.localSlope(uiMap, px / W * 100, py / H * 100, 30, W, H)
-                    if s ~= nil then v = (s < STEEP) and 1 or 2 end
+                    if s ~= nil then slopeMemo[key] = s; v = (s < STEEP) and 1 or 2 end
                 end
             end
         end
         memo[key] = v
         return v
     end
-    local function isWalkCell(cx, cy) return cellState(cx, cy) == 1 end
+    -- steep cells in a thin band (<= PASS_CELLS across, slopes below STEEP_PASS, walkable on both sides) are passable
+    local passMemo = {}
+    local function cellState(cx, cy)
+        local v = rawState(cx, cy)
+        if v ~= 2 or not useT then return v end
+        local key = cy * cols + cx
+        local pv = passMemo[key]
+        if pv == nil then
+            pv = false
+            local s0 = slopeMemo[key]
+            if s0 and s0 < STEEP_PASS then
+                for _, d in ipairs { { 1, 0 }, { 0, 1 }, { 1, 1 }, { 1, -1 } } do
+                    local limit = (d[1] ~= 0 and d[2] ~= 0) and 2 or PASS_CELLS
+                    local len, okEnds = 1, true
+                    for _, sgn in ipairs { 1, -1 } do
+                        local k = 1
+                        while true do
+                            local nx, ny = cx + d[1] * k * sgn, cy + d[2] * k * sgn
+                            local rv = rawState(nx, ny)
+                            local sm = (rv == 2) and slopeMemo[ny * cols + nx]
+                            if sm and sm < STEEP_PASS then
+                                len = len + 1; k = k + 1
+                                if len > limit then break end
+                            elseif rv == 1 then break
+                            else okEnds = false; break end
+                        end
+                        if not okEnds or len > limit then break end
+                    end
+                    if okEnds and len <= limit then pv = true; break end
+                end
+            end
+            passMemo[key] = pv
+        end
+        return pv and 4 or 2
+    end
+    local function isWalkCell(cx, cy) local st = cellState(cx, cy); return st == 1 or st == 4 end
     local function isWalkP(x, y)
         if x < 0 or y < 0 then return false end
         return isWalkCell(math.floor(x / GRID), math.floor(y / GRID))
@@ -575,19 +775,20 @@ local function buildRoute(pts, W, H, circles, uiMap)
         local d = dist(a, b)
         local k = math.max(1, math.ceil(d / GRID))
         local step = d / k
-        local run = 0
+        local run, ramp = 0, false
         for s = 0, k do
             local t = s / k
             local x, y = a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t
             if x < 0 or y < 0 then return false end
             local st = cellState(math.floor(x / GRID), math.floor(y / GRID))
-            if st == 0 then return false
-            elseif st == 2 then
+            if st == 4 then ramp = true; run = 0
+            elseif st == 0 then return false
+            elseif st == 2 or st == 3 then -- steep ground or water: tolerated only for a short ford
                 run = run + 1
                 if run * math.max(step, 1) >= SPIKE_YD then return false end
             else run = 0 end
         end
-        if useT then
+        if useT and not ramp then
             local sl = sustainedSlope(uiMap, a, b, W, H)
             if sl == nil or sl >= STEEP then return false end
         end
@@ -807,7 +1008,7 @@ local function buildRoute(pts, W, H, circles, uiMap)
                         local nx, ny = x + dx, y + dy
                         if isWalkCell(nx, ny) and (dx == 0 or dy == 0 or (isWalkCell(x + dx, y) and isWalkCell(x, y + dy))) then
                             local step = (dx ~= 0 and dy ~= 0) and 28.284 or 20
-                            if nearSteep(nx, ny) then step = step * STEEP_COST end
+                            if cellState(nx, ny) == 4 then step = step * PASS_COST elseif nearSteep(nx, ny) then step = step * STEEP_COST end
                             local nd, nk = d + step, ny * cols + nx
                             if not dd[nk] or nd < dd[nk] then dd[nk] = nd; prv[nk] = k; push(nd, nk) end
                         end
@@ -1384,6 +1585,81 @@ local function buildRoute(pts, W, H, circles, uiMap)
     return res
 end
 
+if os.getenv("PROFPATH_WATERTEST") then
+    local function chk(name, ui, x, y, expect)
+        local wi = waterInfo(ui)
+        local w, d, h = waterAtPct(wi, x, y)
+        print(string.format("%-28s uiMap %d (%.1f,%.1f): %s depth=%.1f height=%s  expected %s %s", name, ui, x, y, w and "WATER" or "land", d, h and string.format("%.0f", h) or "nil", expect, ((w and expect == "water") or (not w and expect == "land")) and "OK" or "MISMATCH"))
+    end
+    chk("Redridge lake", 1433, 35, 57, "water"); chk("Redridge lake", 1433, 45, 60, "water")
+    chk("Lakeshire", 1433, 26, 46, "land"); chk("Redridge road", 1433, 30, 40, "land"); chk("south of lake", 1433, 45, 75, "land")
+    chk("Goldshire", 1429, 42, 65, "land")
+    do
+        local wi = waterInfo(1429)
+        local best, bx, by, bh = 0, nil, nil, nil
+        local cnt = 0
+        for mx = 45, 55, 0.5 do for my = 60, 70, 0.5 do
+            local w, d, h = waterAtPct(wi, mx, my)
+            if d > best then best, bx, by, bh = d, mx, my, h end
+            if w then cnt = cnt + 1 end
+        end end
+        print(string.format("Elwynn (45-55,60-70): deepest filled depth %.1f yd at (%s,%s) terrain height %s; water samples %d of 441 -> lake %s", best, bx and bx or "-", by and by or "-", bh and string.format("%.0f", bh) or "-", cnt, cnt > 0 and "FOUND" or "not found"))
+    end
+    chk("Bloodhoof", 1412, 47, 57, "land"); chk("Brill", 1420, 61, 52, "land"); chk("Thelsamar", 1432, 35, 46, "land")
+    do
+        local wi = waterInfo(1432)
+        local cnt, tot = 0, 0
+        for mx = 50, 55, 0.5 do for my = 15, 25, 0.5 do tot = tot + 1; if waterAtPct(wi, mx, my) then cnt = cnt + 1 end end end
+        print(string.format("Loch Modan loch (50-55,15-25): %d of %d samples water -> %s", cnt, tot, cnt > tot / 3 and "WATER OK" or "MISMATCH"))
+    end
+    for _, ui in ipairs { 1433, 1432, 1429, 1412 } do
+        local wi = waterInfo(ui)
+        local rows2 = {}
+        for _, c in ipairs(wi.comps) do rows2[#rows2 + 1] = c end
+        table.sort(rows2, function(a, b) return a.cells > b.cells end)
+        local out2 = {}
+        for i = 1, math.min(6, #rows2) do out2[#out2 + 1] = string.format("%d cells maxdepth %.0f %s %s", rows2[i].cells, rows2[i].maxd, rows2[i].bbox, rows2[i].ok and "WATER" or "rejected") end
+        print("components uiMap " .. ui .. ": " .. table.concat(out2, " | "))
+    end
+    print("-- water share of grid per zone (terrain zones)")
+    local rows = {}
+    for area, z in pairs(zones) do
+        local wi = waterInfo(z.map)
+        if wi then rows[#rows + 1] = { z.name, wi.share, wi.wetCells } end
+    end
+    table.sort(rows, function(a, b) return a[2] > b[2] end)
+    for _, r in ipairs(rows) do print(string.format("  %-24s %.1f%% (%d cells)", r[1], r[2] * 100, r[3])) end
+    -- how many current routes cross water for more than a ford
+    local fh = io.open(ROOT .. "/tools/review/review.json", "rb")
+    if fh then
+        local data = parse_json(fh:read("a")); fh:close()
+        local bad, tot = {}, 0
+        for _, r in ipairs(data.routes) do
+            local wi = waterInfo(r.map)
+            if wi then
+                tot = tot + 1
+                local pts = {}
+                for i = 1, #r.route - 1, 2 do pts[#pts + 1] = { r.route[i] * wi.W / 100, r.route[i + 1] * wi.H / 100 } end
+                local maxrun, run, wyd = 0, 0, 0
+                for i = 1, #pts do
+                    local a, b = pts[i], pts[i % #pts + 1]
+                    local d = dist(a, b)
+                    local k = math.max(1, math.ceil(d / 10))
+                    for s = 0, k - 1 do
+                        local t = s / k
+                        local x, y = a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t
+                        if wi.wet[math.floor(y / GRID) * wi.cols + math.floor(x / GRID)] then run = run + d / k; wyd = wyd + d / k; if run > maxrun then maxrun = run end else run = 0 end
+                    end
+                end
+                if maxrun > 40 then bad[#bad + 1] = string.format("%s %s %d-%d: %d yd in water, longest run %d yd", r.kind, r.zone, r.from, r.to, math.floor(wyd), math.floor(maxrun)) end
+            end
+        end
+        print(string.format("-- previous routes crossing water (> 40 yd run): %d of %d", #bad, tot))
+        for _, b in ipairs(bad) do print("  " .. b) end
+    end
+    os.exit(0)
+end
+
 ---------------------------------------------------------------- Build
 local overrides = {}
 do
@@ -1493,7 +1769,7 @@ local flagRows, slopeViol, methodCount = {}, {}, {}
 local totalLong = 0
 local function checkScore(r)
     local slopeTerm = 0
-    if r.maxslope then slopeTerm = r.maxslope >= STEEP and 5 or 0 elseif r.maxhop > 300 then slopeTerm = 2 end
+    if r.maxslope then slopeTerm = r.maxslope >= STEEP_PASS and 5 or 0 elseif r.maxhop > 300 then slopeTerm = 2 end
     return r.crossings * 3 + r.overlap * 10 + slopeTerm + (r.share < 0.3 and 1 or 0)
 end
 local reviewRoutes = {}
@@ -1502,7 +1778,7 @@ local out = { "-- Generated by tools/build_routes.lua from Wowhead WoW: Forever 
     "local _, ns = ...", "ns.Routes = {" }
 
 local function pickZones(prof, band)
-    local from, to, guide, starter = band[1], band[2], band[3], band[4]
+    local from, to, guide, starter, extra = band[1], band[2], band[3], band[4], band[5] or {}
     local gathering = SKILL[prof] ~= nil
     local cand, seen = {}, {}
     local function add(area, isGuide)
@@ -1523,6 +1799,13 @@ local function pickZones(prof, band)
     local cap = MAXZONES
     if starter then cap = #guideList end -- keep every starter zone so both factions are covered
     for _, a in ipairs(guideList) do add(a, true); list[#list + 1] = cand[#cand] end
+    for _, name in ipairs(extra) do -- zones from the published guide: candidates after the Wowhead picks, before the node-count picks
+        local a = areaOf(name)
+        if a and not seen[a] then
+            add(a, false); list[#list + 1] = cand[#cand]
+            if gathering then print(string.format("guide zone %s %d-%d: %d useful nodes after exclusions (%d town, %d avoid)", name, from, to, cand[#cand].nodes, cand[#cand].et or 0, cand[#cand].ea or 0)) end
+        end
+    end
     if gathering then
         local others = {}
         for area in pairs(zones) do
@@ -1620,7 +1903,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                             fl[#fl + 1] = string.format("(%.1f,%.1f)=%dyd", fp[1], fp[2], math.floor(best + 0.5))
                             if best <= 60 then flagRows[#flagRows + 1] = string.format("VIOLATION %s %s %d-%d near (%.1f,%.1f): %d yd%s", prof, z.name, from, to, fp[1], fp[2], math.floor(best + 0.5), r.manual and " [manual]" or "") end
                         end
-                        if r.maxslope and r.maxslope >= STEEP and not r.manual then slopeViol[#slopeViol + 1] = string.format("%s %s %d-%d slope=%.2f", prof, z.name, from, to, r.maxslope) end
+                        if r.maxslope and r.maxslope >= STEEP_PASS and not r.manual then slopeViol[#slopeViol + 1] = string.format("%s %s %d-%d slope=%.2f", prof, z.name, from, to, r.maxslope) end
                         metricRows[#metricRows].text = metricRows[#metricRows].text .. string.format(" method=%s%s slope=%s flagged=%s alt=[%s] usable=[%s] longPieces=%d comps=%d first=%d", gm, r.manual and "(manual)" or "", r.maxslope and string.format("%.2f", r.maxslope) or "n/a", #fl > 0 and table.concat(fl, ";") or "-", gen.alt or "", gen.usable or "", gen.longPieces or 0, gen.compCount or 0, gen.compNodes or 0)
                         totalLong = totalLong + (gen.longPieces or 0)
                         if #fl > 0 then flagRows[#flagRows + 1] = string.format("%s %s %d-%d %s%s", prof, z.name, from, to, table.concat(fl, " "), r.manual and " [manual]" or "") end

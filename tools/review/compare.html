@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Route vs guide</title>
+<style>
+body{background:#1b1b1b;color:#ddd;font:13px sans-serif;margin:0}
+.pair{display:flex;gap:8px;padding:6px;border-bottom:1px solid #333;align-items:flex-start}
+.pair h3{margin:0 0 4px;font-size:14px}
+svg,img{width:620px;height:auto;display:block}
+</style></head><body>
+<div id="out">loading…</div>
+<script>
+// Our routes (review.json) next to wow-professions.com Classic guide maps, for visual comparison.
+const G = 'https://www.wow-professions.com/images/classic/';
+const GUIDES = [
+  ['mining',1,'Durotar','mining-leveling-durotar.jpg'],['mining',1,'Dun Morogh','mining-leveling-dun-morogh.jpg'],
+  ['mining',1,'Elwynn Forest','mining-leveling-elwynn.jpg'],['mining',1,'Tirisfal Glades','mining-leveling-tirisfal.jpg'],
+  ['mining',1,'Mulgore','mining-leveling-mulgore.jpg'],['mining',1,'Darkshore','mining-leveling-darkshore.jpg'],
+  ['mining',65,'Hillsbrad Foothills','mining-leveling-hillsbrad.jpg'],['mining',65,'Redridge Mountains','mining-leveling-redridge.jpg'],
+  ['mining',65,'The Barrens','mining-leveling-barrens.jpg'],['mining',65,'Ashenvale','mining-leveling-ashenvale.jpg'],
+  ['mining',125,'Arathi Highlands','classic-wow-iron-ore-farming-arathi.jpg'],['mining',125,'Desolace','classic-wow-iron-ore-farming-desolace.jpg'],
+  ['mining',125,'Thousand Needles','classic-wow-iron-ore-farming-thousand-needles.jpg'],
+  ['mining',175,'The Hinterlands','classic-wow-mithril-farming-hinterlands.jpg'],['mining',175,'Tanaris','classic-wow-mithril-farming-tanaris.jpg'],
+  ['mining',225,"Un'Goro Crater",'classic-wow-thorium-farming-ungoro.jpg'],['mining',225,'Eastern Plaguelands','classic-wow-thorium-farming-eastern.jpg'],
+  ['mining',225,'Burning Steppes','classic-wow-thorium-farming-burning.jpg'],['mining',225,'Winterspring','classic-wow-thorium-farming-winterspring.jpg'],
+  ['mining',225,'Silithus','classic-wow-thorium-farming-silithus.jpg'],
+];
+fetch('review.json').then(r => r.json()).then(j => {
+  const html = [];
+  GUIDES.forEach(([kind, from, zone, img], i) => {
+    // our route in that zone for the guide's band (or the nearest band that has the zone)
+    let cands = j.routes.filter(r => r.kind === kind && r.zone.toLowerCase() === zone.toLowerCase());
+    cands.sort((a, b) => Math.abs(a.from - from) - Math.abs(b.from - from));
+    const r = cands[0];
+    let left = '<div style="width:620px;height:413px;display:flex;align-items:center;justify-content:center;background:#222">no route of ours in this zone</div>';
+    let title = `${zone} — guide band ${from}+`;
+    if (r) {
+      const pts = []; for (let k = 0; k < r.route.length; k += 2) pts.push((r.route[k] * 10).toFixed(1) + ',' + (r.route[k + 1] * 6.68).toFixed(1));
+      const dots = r.nodes.map(n => `<circle cx="${n[0] * 10}" cy="${n[1] * 6.68}" r="4" fill="#ffd400" stroke="#000" stroke-width="1"/>`).join('');
+      left = `<svg viewBox="0 0 1002 668"><image href="https://wow.zamimg.com/images/wow/classicplus/maps/enus/original/${r.area}.jpg" width="1002" height="668"/>${dots}<polygon points="${pts.join(' ')}" fill="none" stroke="#ff3b10" stroke-width="6" stroke-linejoin="round"/></svg>`;
+      title = `${i + 1}. ${zone} — ours: ${r.kind} ${r.from}-${r.to} (${r.id}, ${r.len} yd, share ${r.share}) — guide band ${from}+`;
+    }
+    html.push(`<div class="pair" id="p${i + 1}"><div><h3>${title}</h3>${left}</div><div><h3>wow-professions.com (Classic)</h3><img src="${G + img}"></div></div>`);
+  });
+  document.getElementById('out').innerHTML = html.join('');
+});
+</script></body></html>
