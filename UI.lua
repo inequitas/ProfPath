@@ -630,7 +630,7 @@ local function zoneList(prof, kind)
         if shown < 4 and (z.side == "C" or not side or z.side == side) then
             shown = shown + 1
             local zone = ns.Zones and ns.Zones[z.area]
-            local name = zone and zone[2] or ("zone " .. z.area)
+            local name = (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
             local bits = {}
             if z.nodes then bits[#bits + 1] = z.nodes .. " nodes" end
             if z.share and z.share < 0.95 then bits[#bits + 1] = ("route covers %d%%"):format(math.floor(z.share * 100 + 0.5)) end
@@ -638,7 +638,7 @@ local function zoneList(prof, kind)
             if z.side == "C" then bits[#bits + 1] = "contested" end
             text("GameFontHighlight", 10, y + 4, CONTENT - 150, name .. "  |cff888888" .. table.concat(bits, "  -  ") .. "|r")
             if z.route and ns.Map then
-                local isActive = active and active.map == z.map
+                local isActive = active and active.map == z.map and active.route and active.route[1] == z.route[1] and active.route[2] == z.route[2]
                 button(isActive and "Hide route" or "Show route", CONTENT - 134, 128, function()
                     if isActive then
                         ns.Map.clear()
