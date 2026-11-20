@@ -372,17 +372,23 @@ function ns.recalc(onDone)
     if recalcCo then recalcAgain = true; return end
     recalcCo = coroutine.create(recalcNow)
     ns.recalcBusy = true
+    if ns.UI.setBusy then ns.UI.setBusy(true) end
     local function step()
         local t0 = debugprofilestop()
         while recalcCo do
             local ok, err = coroutine.resume(recalcCo)
             if not ok then
                 recalcCo, ns.recalcBusy = nil, false
+                if ns.UI.setBusy then ns.UI.setBusy(false) end
                 recalcDone = {}
                 if geterrorhandler then geterrorhandler()(err) end
             elseif coroutine.status(recalcCo) == "dead" then
                 recalcCo, ns.recalcBusy = nil, false
-                if recalcAgain then recalcAgain = false; ns.recalc() else finished() end
+                if recalcAgain then recalcAgain = false; ns.recalc()
+                else
+                    if ns.UI.setBusy then ns.UI.setBusy(false) end
+                    finished()
+                end
             end
             if not recalcCo or debugprofilestop() - t0 > 15 then break end
         end

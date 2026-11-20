@@ -131,7 +131,36 @@ local function build()
     child:SetSize(CONTENT, 10)
     scroll:SetScrollChild(child)
     UI.child = child
+
+    -- "Calculating" overlay: covers the content while a recalculation runs (over several frames),
+    -- so clicks don't seem to do nothing and an empty window doesn't look broken.
+    local busy = CreateFrame("Frame", nil, frame)
+    busy:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
+    busy:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 20, 0)
+    busy:SetFrameLevel((scroll:GetFrameLevel() or 0) + 20)
+    busy:EnableMouse(true) -- swallow clicks on the half-updated content
+    local shade = busy:CreateTexture(nil, "BACKGROUND")
+    shade:SetAllPoints()
+    shade:SetColorTexture(0, 0, 0, 0.55)
+    local label = busy:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    label:SetPoint("TOP", 0, -60)
+    label:SetText("Calculating your plan...")
+    local dots, acc = 0, 0
+    busy:SetScript("OnUpdate", function(_, dt)
+        acc = acc + dt
+        if acc < 0.3 then return end
+        acc, dots = 0, (dots + 1) % 4
+        label:SetText("Calculating your plan" .. string.rep(".", dots))
+    end)
+    busy:Hide()
+    UI.busy = busy
     frame:Hide() -- new frames start shown; toggle() then shows it on the first /pp
+end
+
+-- Called by Core when a recalculation starts (true) and when it finished and drew (false).
+function UI.setBusy(on)
+    if not UI.busy then return end
+    if on then UI.busy:Show() else UI.busy:Hide() end
 end
 
 local function showBar(on)
@@ -1101,7 +1130,7 @@ end
 function UI.show(state)
     -- While a recalculation runs in slices, the state is half-updated: draw when it finishes
     -- (the recalculation itself calls UI.show from inside its coroutine).
-    if ns.recalcBusy and not coroutine.running() then return end
+    if ns.recalcBusy and not coroutine.running() then UI.setBusy(true); return end
     lastState = state
     if not frame or not frame:IsShown() then return end
     render(state)
