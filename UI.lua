@@ -666,14 +666,16 @@ local function zoneList(prof, kind)
             local bits = {}
             local covered = z.nodes and z.share and math.floor(z.nodes * z.share + 0.5)
             if z.len and not z.hotspot then bits[#bits + 1] = ("loop %.1f km"):format(z.len / 1000) end
-            if covered then bits[#bits + 1] = covered .. " nodes along it" end
+            if covered then bits[#bits + 1] = covered .. " nodes" end
             if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
             if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
             if z.hotspot and z.cave and z.entrance then
                 bits[#bits + 1] = ("entrance at %.0f, %.0f"):format(z.entrance[1], z.entrance[2])
             end
-            text(z.hotspot and "GameFontHighlightSmall" or "GameFontHighlight", z.hotspot and 26 or 10, y + 4, CONTENT - 166,
-                name .. "  |cff888888" .. table.concat(bits, "  -  ") .. "|r")
+            -- Name on the first line, details on a smaller second line (one line was cut off).
+            local x0 = z.hotspot and 26 or 10
+            text(z.hotspot and "GameFontHighlightSmall" or "GameFontHighlight", x0, y + 1, CONTENT - 150 - x0, name)
+            text("GameFontDisableSmall", x0, y + 16, CONTENT - 150 - x0, table.concat(bits, "  -  "))
             if z.route and ns.Map then
                 local isActive = active and active.map == z.map and active.route and active.route[1] == z.route[1] and active.route[2] == z.route[2]
                 button(isActive and "Hide route" or "Show route", CONTENT - 134, 128, function()
@@ -686,6 +688,7 @@ local function zoneList(prof, kind)
                         end
                         ns.Map.show(z, ("%s %d-%d: %s"):format(label, band.from, band.to, name), spots)
                         ns.Map.waypoint()
+                        if ns.Map.openMap then ns.Map.openMap() end
                         print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set)%s. /pp route off hides it.")
                             :format(name, #spots > 0 and (", with %d hot spot%s in yellow on the world map"):format(#spots, #spots > 1 and "s" or "") or ""))
                         if z.cave and z.entrance then
@@ -696,7 +699,7 @@ local function zoneList(prof, kind)
                     UI.show(lastState)
                 end)
             end
-            y = y + 28
+            y = y + 34
         end
     end
     y = y + 4

@@ -392,6 +392,24 @@ function Map.show(zoneEntry, label, spots)
     return true
 end
 
+-- Open the world map on the active route's zone (the route is drawn there).
+function Map.openMap()
+    if not current then return end
+    local map = current.map
+    pcall(function()
+        if OpenWorldMap then
+            OpenWorldMap(map)
+        elseif WorldMapFrame then
+            if not WorldMapFrame:IsShown() then
+                if ShowUIPanel then ShowUIPanel(WorldMapFrame) else WorldMapFrame:Show() end
+            end
+            WorldMapFrame:SetMapID(map)
+        end
+    end)
+    pcall(setupWorld)
+    pcall(drawWorld)
+end
+
 function Map.clear()
     current, world = nil, nil
     save()
