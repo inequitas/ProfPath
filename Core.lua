@@ -122,7 +122,7 @@ local function owned(items)
     return t
 end
 
-function ns.recalc()
+local function recalcNow()
     local profs = ns.Recipes.professions()
     state.profs = profs
     -- Which profession to show: the one chosen (remembered per character); otherwise the last
@@ -355,6 +355,50 @@ end
 
 -- Debounced work: many events arrive in bursts, so wait until they settle before acting.
 local pendingRecalc, pendingRedraw, pendingCapture = false, false, false
+-- Recalculating can take most of a second (long plans, budget fitting). Run it as a coroutine in
+-- slices of about 15 ms per frame so the game keeps drawing instead of freezing. The optimizer
+-- yields between its passes (ns.Optimizer.yield). Without a frame timer (tests) it runs at once.
+local recalcCo, recalcAgain, recalcDriver
+local recalcDone = {} -- callbacks for when the running recalculation finishes
+local function finished()
+    local cbs = recalcDone
+    recalcDone = {}
+    for _, cb in ipairs(cbs) do pcall(cb) end
+end
+-- onDone (optional): called once the new plan is in ns.state.
+function ns.recalc(onDone)
+    if onDone then recalcDone[#recalcDone + 1] = onDone end
+    if not (debugprofilestop and CreateFrame and coroutine and coroutine.create) then recalcNow(); finished(); return end
+    if recalcCo then recalcAgain = true; return end
+    recalcCo = coroutine.create(recalcNow)
+    ns.recalcBusy = true
+    local function step()
+        local t0 = debugprofilestop()
+        while recalcCo do
+            local ok, err = coroutine.resume(recalcCo)
+            if not ok then
+                recalcCo, ns.recalcBusy = nil, false
+                recalcDone = {}
+                if geterrorhandler then geterrorhandler()(err) end
+            elseif coroutine.status(recalcCo) == "dead" then
+                recalcCo, ns.recalcBusy = nil, false
+                if recalcAgain then recalcAgain = false; ns.recalc() else finished() end
+            end
+            if not recalcCo or debugprofilestop() - t0 > 15 then break end
+        end
+        if not recalcCo and recalcDriver then recalcDriver:SetScript("OnUpdate", nil) end
+    end
+    recalcDriver = recalcDriver or CreateFrame("Frame")
+    recalcDriver:SetScript("OnUpdate", step)
+    step()
+end
+if ns.Optimizer then
+    ns.Optimizer.yield = function()
+        local co, isMain = coroutine.running()
+        if co and not isMain then coroutine.yield() end
+    end
+end
+
 function ns.requestRecalc()
     if pendingRecalc or not ns.UI.isShown() or ns.Prices.scanning then return end
     pendingRecalc = true

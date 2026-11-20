@@ -1099,6 +1099,9 @@ local function render(state)
 end
 
 function UI.show(state)
+    -- While a recalculation runs in slices, the state is half-updated: draw when it finishes
+    -- (the recalculation itself calls UI.show from inside its coroutine).
+    if ns.recalcBusy and not coroutine.running() then return end
     lastState = state
     if not frame or not frame:IsShown() then return end
     render(state)

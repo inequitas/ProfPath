@@ -238,6 +238,7 @@ local function optimizeWith(ctx, zeroFree)
     -- has been priced for the quantity actually needed (switching to crafting an intermediate brings
     -- new raw materials into the list, and those need their bulk price too).
     for _ = 1, 8 do
+        if O.yield then O.yield() end -- let the game draw a frame (set by Core)
         ctx.unitOverride = override
         missing = {}
         unitCost = makeUnitCost(ctx, producers, missing)

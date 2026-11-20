@@ -54,7 +54,7 @@ local function onSkillUp(profName, old, new)
     local before = prevPlan
     -- re-plan the profession that just went up, even if the window shows another one
     ns.Recipes.char().selectedProf = profName
-    ns.recalc()
+    ns.recalc(function() -- the plan is recalculated over a few frames: compare once it's done
     local st = ns.state
 
     -- Reached the skill to train the next rank: say so once, then re-plan after training.
@@ -79,6 +79,7 @@ local function onSkillUp(profName, old, new)
         end
         track()[now.recipe.id] = nil -- fresh luck count for the new step
     end
+    end)
 end
 
 local function checkSkill()
