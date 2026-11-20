@@ -142,6 +142,7 @@ local WATER_MIN_CELLS = 15          -- ignore puddles smaller than this many cel
 local STEEP_PASS = 1.7               -- a thin band (<= PASS_CELLS cells) of slopes between STEEP and this is a passable ramp
 local PASS_CELLS = 3                -- 60 yd
 local PASS_COST = 4
+local SPLIT_MIN_YD = 1500            -- grid distance between the two cluster seeds for a corridor to be split
 local SPIKE_YD = 40                  -- steep stretches shorter than this are ignored (a segment is blocked only when sustained)
 local STEEP_COST = 1.3              -- grid-path cost multiplier within 40 yd of steep ground
 local PATH_CAP = 600                -- yards: longest single straight piece of a path
@@ -886,7 +887,7 @@ local function buildRoute(pts, W, H, circles, uiMap)
 
     ------------------------------------------------------------ method b: stop tour
     local compRank
-    local function tourMethod(rank)
+    local function tourMethod(rank, minC, spur, which)
         -- walkable components of the 20 yd grid; the region is the component holding the most nodes
         local label = {}
         local ncomp = 0
@@ -1037,6 +1038,26 @@ local function buildRoute(pts, W, H, circles, uiMap)
         for a = 1, #S0 do
             if lab[a] == bl then S[#S + 1] = S0[a]; DD[#S] = DD0[a]; PV[#S] = PV0[a] end
         end
+        if which then -- split a long corridor: two clusters around the two farthest stops
+            local n0 = #S
+            if n0 < 8 then return nil end
+            local function d0(a, b) return math.min(DD[a][keyOf(S[b])] or math.huge, DD[b][keyOf(S[a])] or math.huge) end
+            local ba, bb, bd = 1, 2, -1
+            for a = 1, n0 do for b = a + 1, n0 do
+                local d = d0(a, b)
+                if d > bd then ba, bb, bd = a, b, d end
+            end end
+            if bd < SPLIT_MIN_YD then return nil end
+            local gA, gB = {}, {}
+            for sidx = 1, n0 do
+                if d0(sidx, ba) <= d0(sidx, bb) then gA[#gA + 1] = sidx else gB[#gB + 1] = sidx end
+            end
+            if #gA < 4 or #gB < 4 then return nil end
+            local grp = which == 1 and gA or gB
+            local S2, DD2, PV2 = {}, {}, {}
+            for _, sidx in ipairs(grp) do S2[#S2 + 1] = S[sidx]; DD2[#S2] = DD[sidx]; PV2[#S2] = PV[sidx] end
+            S, DD, PV = S2, DD2, PV2
+        end
         local ns_ = #S
         if ns_ < 2 then return nil end
         local C = {}
@@ -1150,7 +1171,7 @@ local function buildRoute(pts, W, H, circles, uiMap)
                 for _, i in ipairs(stopCover[t]) do if cnt[i] == 1 then lost = lost + 1 end end
                 local saved = G(prv, t) + G(t, nxt) - G(prv, nxt)
                 local ratio = lost == 0 and math.huge or saved / lost
-                if (lost == 0 or (ratio > SPUR_YD_PER_NODE and covered - lost >= MIN_COVER * m)) and (not bestRatio or ratio > bestRatio) then
+                if (lost == 0 or (ratio > (spur or SPUR_YD_PER_NODE) and covered - lost >= (minC or MIN_COVER) * m)) and (not bestRatio or ratio > bestRatio) then
                     bestPos, bestRatio, bestLost = pos, ratio, lost
                 end
             end
@@ -1580,6 +1601,43 @@ local function buildRoute(pts, W, H, circles, uiMap)
             if sec.overlap <= 0.4 and sec.crossings <= 2 and coveredN >= 15 then res.second = sec end
         end
     end
+    -- tangled? rebuild with harsher pruning and/or split a long corridor into two loops; keep the version with fewest crossings
+    local function ypnOf(r) return r.len / math.max(1, r.share * n) end
+    if tour and (res.crossings > 3 or res.overlap > 0.3) then
+        local orig = res
+        local limit = 1.3 * ypnOf(orig)
+        local before = string.format("len=%d share=%.2f cross=%d overlap=%.2f", math.floor(orig.len + 0.5), orig.share, orig.crossings, orig.overlap)
+        local bestRes, bestKey = nil, { orig.crossings, orig.overlap }
+        local function better(cr, ov) return cr < bestKey[1] or (cr == bestKey[1] and ov < bestKey[2] - 1e-9) end
+        local ta = tourMethod(1, 0.6, 60)
+        if ta then
+            ta.method = "tour"
+            local ra = finish(ta, orig.alt)
+            if ypnOf(ra) <= limit and better(ra.crossings, ra.overlap) then bestRes, bestKey = ra, { ra.crossings, ra.overlap }; ra.rebuilt = "aggressive pruning" end
+        end
+        local tA = tourMethod(1, 0.6, 60, 1)
+        local tB = tA and tourMethod(1, 0.6, 60, 2)
+        if tA and tB then
+            tA.method = "tour"; tB.method = "tour"
+            local rA, rB = finish(tA, "split 1"), finish(tB, "split 2")
+            local function decent(r) return r.overlap <= 0.4 and r.crossings <= 2 and math.floor(r.share * n + 0.5) >= 15 end
+            local pooled = (rA.len + rB.len) / math.max(1, (rA.share + rB.share) * n)
+            local cr = rA.crossings + rB.crossings
+            local ov = math.max(rA.overlap, rB.overlap)
+            if decent(rA) and decent(rB) and pooled <= limit and better(cr, ov) then
+                bestRes, bestKey = rA, { cr, ov }
+                rA.second = rB
+                rA.rebuilt = "split into two loops"; rB.rebuilt = "split part 2"
+                rA.splitPartner = rB
+            end
+        end
+        if bestRes then
+            bestRes.before = before
+            local tailSecond = orig.second
+            if bestRes.splitPartner then bestRes.splitPartner.second = tailSecond else bestRes.second = tailSecond end
+            res = bestRes
+        end
+    end
     res.compNodes = compRank and compRank[1] and compRank[1][2] or 0
     res.compCount = compRank and #compRank or 0
     return res
@@ -1767,6 +1825,7 @@ local nroutes, nopen, globalMax = 0, 0, 0
 local metricRows = {}
 local flagRows, slopeViol, methodCount = {}, {}, {}
 local totalLong = 0
+local touchedRows = {}
 local function checkScore(r)
     local slopeTerm = 0
     if r.maxslope then slopeTerm = r.maxslope >= STEEP_PASS and 5 or 0 elseif r.maxhop > 300 then slopeTerm = 2 end
@@ -1852,14 +1911,15 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     circ[#circ + 1] = { fp[1] * sz[1] / 100, fp[2] * sz[2] / 100, r = FLAG_KEEPOUT }
                 end
                 local r0 = buildRoute(c.pts, sz[1], sz[2], circ, z.map)
-                local variants = r0 and { r0, r0.second } or {}
+                local variants = {}
+                do local rr = r0; while rr do variants[#variants + 1] = rr; rr = rr.second end end
                 local rFirst
                 for vi = 1, math.max(1, #variants) do
                 local z = zones[c.area]
-                if vi == 2 then
+                if vi >= 2 then
                     local t = {}
                     for k, v in pairs(z) do t[k] = v end
-                    t.name = t.name .. " (2)"
+                    t.name = t.name .. " (" .. vi .. ")"
                     z = t
                 end
                 local r = variants[vi]
@@ -1868,7 +1928,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     local ov = overrides[string.format("%s:%d-%d:%d", prof, from, to, c.area)]
                     if ov and vi == 1 then r = applyOverride(gen, ov, c.pts, sz[1], sz[2], z.map) end
                 end
-                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "", vi == 2 and " variant = 2," or "") .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
+                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "", vi >= 2 and (" variant = " .. vi .. ",") or "") .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
                 out[#out + 1] = string.format('        { area = %d, map = %d, side = "%s", nodes = %d, guide = %s,%s },',
                     c.area, z.map, z.side, c.nodes, tostring(c.guide and true or false), rs)
                 if r then
@@ -1886,7 +1946,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                         local st = {}
                         for _, p in ipairs(r.stopsY) do st[#st + 1] = r1(p[1] / W * 100); st[#st + 1] = r1(p[2] / H * 100) end
                         reviewRoutes[#reviewRoutes + 1] = { rec = r, gen = gen, W = W, H = H, nd = nd, cov = cov, st = st, prof = prof, from = from, to = to,
-                            id = string.format("%s-%d-%d%s", prof, bi, zi, vi == 2 and "b" or ""), et = c.et or 0, ea = c.ea or 0, z = z, guide = c.guide and true or false, nodes = c.nodes }
+                            id = string.format("%s-%d-%d%s", prof, bi, zi, vi >= 2 and string.char(96 + vi) or ""), et = c.et or 0, ea = c.ea or 0, z = z, guide = c.guide and true or false, nodes = c.nodes }
                     end
                     local check = checkScore(r)
                     local pruneStr = string.format("stops %d->%d tourLen %d->%d cov %d->%d of %d", gen.preStops or 0, gen.stops, math.floor((gen.preLen or 0) + 0.5), math.floor((gen.postLen or 0) + 0.5), gen.preCov or 0, gen.postCov or 0, gen.region or 0)
@@ -1894,6 +1954,9 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     if r.maxhop > globalMax then globalMax = r.maxhop end
                     do
                         local gm = gen.method or "?"
+                        if gen.rebuilt then
+                            touchedRows[#touchedRows + 1] = string.format("%s %s %d-%d [%s]: before %s -> after len=%d share=%.2f cross=%d overlap=%.2f", prof, z.name, from, to, gen.rebuilt, gen.before or "(second part of a split)", math.floor(r.len + 0.5), r.share, r.crossings, r.overlap)
+                        end
                         methodCount[gm] = (methodCount[gm] or 0) + 1
                         local fl = {}
                         for _, fp in ipairs(FLAGGED[z.map] or {}) do
@@ -1963,6 +2026,7 @@ do
     local mc = {}
     for k, v in pairs(methodCount) do mc[#mc + 1] = k .. "=" .. v end
     table.sort(mc)
+    print("routes touched by the tangle fix:" .. string.char(10) .. "  " .. table.concat(touchedRows, string.char(10) .. "  "))
     print("straight pieces > " .. PATH_CAP .. " yd before the cap (tour paths): " .. totalLong)
     print("methods (generated): " .. table.concat(mc, ", "))
     print("slope violations (generated): " .. (#slopeViol > 0 and table.concat(slopeViol, "; ") or "none"))
