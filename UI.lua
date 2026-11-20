@@ -654,12 +654,51 @@ local function zoneList(prof, kind)
     text("GameFontNormal", 4, y, CONTENT - 8, ("Where to go for %d-%d"):format(band.from, band.to))
     y = y + 20
     local active = ns.Map and ns.Map.active and ns.Map.active()
-    local shown, lastShown = 0, nil
-    for _, z in ipairs(band.zones) do
-        -- Up to 4 zones (main loops); a zone's hot spots (mines, dense clusters) follow it, indented.
-        local ok = (z.side == "C" or not side or z.side == side)
-        if z.hotspot then ok = ok and lastShown == z.area elseif ok and shown < 4 then shown = shown + 1; lastShown = z.area else ok = false end
-        if ok then
+    -- How easy each zone is to reach from where you are: the zone you're in first, then by
+    -- distance on your continent (a known flight path there counts as close), other continents last.
+    local here = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local py, px, _, pinst
+    if UnitPosition then py, px, _, pinst = UnitPosition("player") end
+    local taxi = ns.Recipes.char().taxi or {}
+    local function reach(z)
+        if here == z.map then return 0, "you are here" end
+        local zone = ns.Zones and ns.Zones[z.area]
+        local key = zone and zone[2]:gsub("^The ", ""):match("^(%S+)")
+        local fp = false
+        if key then
+            for name in pairs(taxi) do
+                local where = name:match(",%s*(.+)$") or name
+                if where:lower():find(key:lower(), 1, true) then fp = true; break end
+            end
+        end
+        local ok, inst, pos = pcall(C_Map.GetWorldPosFromMapPos, z.map, CreateVector2D(0.5, 0.5))
+        if not (ok and pos and px and inst == pinst) then return 1e9, "other continent (boat or zeppelin)" end
+        local d = math.sqrt((pos.x - px) ^ 2 + (pos.y - py) ^ 2)
+        if fp then return math.min(d, 1500), ("flight path known, %.1f km"):format(d / 1000) end
+        return d, ("%.1f km away"):format(d / 1000)
+    end
+    local mains = {}
+    for i, z in ipairs(band.zones) do
+        if not z.hotspot and (z.side == "C" or not side or z.side == side) then
+            local ok, score, note = pcall(reach, z)
+            mains[#mains + 1] = { z = z, i = i, score = ok and score or 1e8, note = ok and note or nil }
+        end
+    end
+    table.sort(mains, function(a, b) if a.score ~= b.score then return a.score < b.score end return a.i < b.i end)
+    -- Up to 4 zones; a zone's hot spots (mines, dense clusters) appear under it once its route is shown.
+    local rows = {}
+    for k = 1, math.min(4, #mains) do
+        local m = mains[k]
+        rows[#rows + 1] = { z = m.z, note = m.note }
+        if active and active.map == m.z.map then
+            for _, o in ipairs(band.zones) do
+                if o.hotspot and o.area == m.z.area then rows[#rows + 1] = { z = o } end
+            end
+        end
+    end
+    for _, row in ipairs(rows) do
+        local z = row.z
+        do
             local zone = ns.Zones and ns.Zones[z.area]
             local name = z.hotspot and (z.cave and ((z.name or "Cave or mine") .. " (cave, ore inside)") or "Hot spot (dense cluster)")
                 or (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
@@ -669,6 +708,7 @@ local function zoneList(prof, kind)
             if covered then bits[#bits + 1] = covered .. " nodes" end
             if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
             if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
+            if row.note then bits[#bits + 1] = row.note end
             if z.hotspot and z.cave and z.entrance then
                 bits[#bits + 1] = ("entrance at %.0f, %.0f"):format(z.entrance[1], z.entrance[2])
             end

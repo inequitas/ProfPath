@@ -98,14 +98,34 @@ local function captureTrainer()
     if ns.requestRecalc then ns.requestRecalc() end
 end
 
+-- Flight paths you know (per character), read from the flight map when you talk to a flight master:
+-- c.taxi[name] = true, e.g. "Stormwind, Elwynn". Used to rank gathering zones by how easy they are to reach.
+local function captureTaxi()
+    if not (C_TaxiMap and C_TaxiMap.GetAllTaxiNodes) then return end
+    local map = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local nodes = map and C_TaxiMap.GetAllTaxiNodes(map)
+    if not nodes then return end
+    local c = ns.Recipes.char()
+    c.taxi = c.taxi or {}
+    local known = Enum and Enum.FlightPathState
+    for _, n in ipairs(nodes) do
+        local reachable = known and (n.state == known.Current or n.state == known.Reachable)
+            or (not known and (n.state == 0 or n.state == 1))
+        if n.name and reachable then c.taxi[n.name] = true end
+    end
+end
+
 local f = CreateFrame("Frame")
+f:RegisterEvent("TAXIMAP_OPENED")
 f:RegisterEvent("MERCHANT_SHOW")
 f:RegisterEvent("MERCHANT_UPDATE")
 f:RegisterEvent("TRAINER_SHOW")
 f:RegisterEvent("TRAINER_UPDATE")
 f:SetScript("OnEvent", function(_, event)
     if not ProfPathDB then return end
-    if event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
+    if event == "TAXIMAP_OPENED" then
+        pcall(captureTaxi)
+    elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
         pcall(captureMerchant)
     else
         local ok, err = pcall(captureTrainer)
