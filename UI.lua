@@ -734,13 +734,15 @@ local function zoneList(prof, kind)
             if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
             if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
             if row.note then bits[#bits + 1] = row.note end
+            if z.mobs and #z.mobs > 0 then bits[#bits + 1] = "skin: " .. table.concat(z.mobs, ", ") end
             if z.hotspot and z.cave and z.entrance then
                 bits[#bits + 1] = ("entrance at %.0f, %.0f"):format(z.entrance[1], z.entrance[2])
             end
             -- Name on the first line, details on a smaller second line (one line was cut off).
             local x0 = z.hotspot and 26 or 10
             text(z.hotspot and "GameFontHighlightSmall" or "GameFontHighlight", x0, y + 1, CONTENT - 150 - x0, name)
-            text("GameFontDisableSmall", x0, y + 16, CONTENT - 150 - x0, table.concat(bits, "  -  "))
+            local details = text("GameFontDisableSmall", x0, y + 16, CONTENT - 150 - x0, table.concat(bits, "  -  "), "LEFT", true)
+            local rowH = math.max(34, 16 + (details.GetStringHeight and details:GetStringHeight() or 12) + 6)
             if z.route and ns.Map then
                 local isActive = active and active.map == z.map and active.route and active.route[1] == z.route[1] and active.route[2] == z.route[2]
                 button(isActive and "Hide route" or "Show route", CONTENT - 134, 128, function()
@@ -764,7 +766,7 @@ local function zoneList(prof, kind)
                     UI.show(lastState)
                 end)
             end
-            y = y + 34
+            y = y + rowH
         end
     end
     y = y + 4
@@ -807,6 +809,37 @@ local function gatherNote(prof)
         text = "|cffffd100Fishing levels by fishing.|r Points come quickly at first and slow down as your skill "
             .. "rises. When fish keep getting away, the water is too hard for your skill: a better fishing pole or a "
             .. "lure helps, or fish in an easier zone."
+        -- What to do next, by skill (WoW: Forever): lures and how each rank is learned.
+        local max = prof.max or 0
+        local tip, npc
+        if rank < 75 then
+            tip = "Any lake or river in a starting zone works. A Shiny Bauble lure helps."
+                .. (rank >= 50 and max <= 75 and " You can train Journeyman Fishing now (Fishing 50, level 10) at a fishing trainer." or "")
+        elseif rank < 150 then
+            tip = "Fish in a capital city, or The Barrens, Darkshore, Loch Modan, Silverpine Forest or Westfall. Nightcrawlers stop fish getting away."
+            if rank >= 125 and max <= 150 then
+                tip = tip .. " Expert Fishing comes from the book \"Expert Fishing - The Bass and You\", sold by Old Man Heming in Booty Bay (level 20, Fishing 125)."
+                npc = { mapID = 1434, x = 0.274, y = 0.770, npc = "Old Man Heming", label = "Waypoint: Old Man Heming" }
+            end
+        elseif rank < 225 then
+            tip = "Fish in Dustwallow Marsh (or Stranglethorn, Desolace, Arathi Highlands) with Bright Baubles from Old Man Heming."
+            if rank >= 200 and max <= 225 then
+                tip = tip .. " Artisan Fishing needs the quest \"Nat Pagle, Angler Extreme\" from Nat Pagle in Dustwallow Marsh (level 35, Fishing 225): catch four fish in Feralas, Swamp of Sorrows, Desolace and Stranglethorn Vale."
+                npc = { mapID = 1445, x = 0.585, y = 0.600, npc = "Nat Pagle", label = "Waypoint: Nat Pagle" }
+            end
+        else
+            tip = "Fish in the higher zones (such as Tanaris, Feralas or Azshara) with Bright Baubles so fish don't get away."
+        end
+        text = text .. "\n" .. tip
+        if npc then
+            para(text)
+            button(npc.label, 4, 220, function()
+                ns.Recipes.waypoint(npc)
+                print(("|cff33ccffProfPath|r: waypoint set to %s."):format(npc.npc))
+            end)
+            y = y + 30
+            text = nil
+        end
     end
     if text then para(text) end
     zoneList(prof, kind)
