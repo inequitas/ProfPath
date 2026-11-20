@@ -198,7 +198,7 @@ local function shoppingList(steps, unitCost)
     return need, crafted
 end
 
-function O.optimize(ctx)
+local function optimizeWith(ctx, zeroFree)
     ctx.target = ctx.target or ctx.maxSkill
     local producers = {}
     for _, r in ipairs(ctx.recipes) do
@@ -212,11 +212,25 @@ function O.optimize(ctx)
     -- free[itemID] = units that cost nothing (stock you started with). ownedFree = everything owned.
     local free = ctx.free or (ctx.ownedFree == true and owned) or {}
 
-    -- Pass 1 treats free stock as free (quantity needed is not known yet).
-    -- Later passes price each needed item for the full quantity (order-book depth),
-    -- net of free units, and stop once the chosen recipes no longer change.
+    -- Free stock only covers the units you have. Before the quantity needed is known, price a free
+    -- item as the average over a typical amount (FREE_REF units) with the free units at 0, so a few
+    -- free units don't make every further unit look free. (Treating owned items as costing nothing
+    -- per unit made 23 owned Medium Leather turn crafting Heavy Leather "free" and flip the plan.)
+    -- Items with no market price keep a full discount: there is nothing else to price them by.
+    -- Later passes price each needed item for the full quantity (order-book depth), net of free
+    -- units, and stop once the chosen recipes no longer change.
+    local FREE_REF = 100
+    local function freeAverage(itemID, n)
+        local market = (ctx.price and ctx.price(itemID, FREE_REF)) or (ctx.vendorBuy and ctx.vendorBuy(itemID)
+            and ctx.vendorBuy(itemID) * FREE_REF)
+        if not market then return 0 end
+        local buy = math.max(FREE_REF - n, 0)
+        if buy == 0 then return 0 end
+        local cost = (ctx.price and ctx.price(itemID, buy)) or market / FREE_REF * buy
+        return cost / FREE_REF
+    end
     local override = {}
-    for itemID, n in pairs(free) do if n > 0 then override[itemID] = 0 end end
+    for itemID, n in pairs(free) do if n > 0 then override[itemID] = zeroFree and 0 or freeAverage(itemID, n) end end
 
     local steps, total, stuckAt, unitCost, missing, need, dist
     local signature
@@ -258,9 +272,10 @@ function O.optimize(ctx)
                 if cost then override[itemID] = cost / n end
             end
         end
-        -- Free items not in the current list stay free so alternatives can still use them.
+        -- Free items not in the current list keep their limited discount so alternatives can still
+        -- use them (but only as far as the free units go).
         for itemID, n in pairs(free) do
-            if n > 0 and not need[itemID] then override[itemID] = 0 end
+            if n > 0 and not need[itemID] then override[itemID] = zeroFree and 0 or freeAverage(itemID, n) end
         end
     end
 
@@ -362,6 +377,21 @@ function O.optimize(ctx)
     -- sellBack: what selling the crafted items returns (vendor price, or AH share if resale is on).
     return { ok = true, steps = steps, totalCost = total, shopping = shopping, missing = missingList, dist = dist,
         intermediates = intermediates, cash = cash, learnTotal = learnTotal, sellBack = back }
+end
+
+-- Plans twice when you own free stock: once counting it as free from the start (best when it
+-- covers what a route needs) and once pricing it as limited (so a few owned units can't make a
+-- whole route look free), and keeps the plan that really costs less: gold spent, net of free
+-- units, plus recipes, minus what vendoring returns.
+function O.optimize(ctx)
+    local free = ctx.free or (ctx.ownedFree == true and ctx.owned) or {}
+    local a = optimizeWith(ctx, true)
+    if not next(free) then return a end
+    local b = optimizeWith(ctx, false)
+    if not a.ok then return b end
+    if not b.ok then return a end
+    local function real(r) return (r.cash or 0) + (r.learnTotal or 0) - (r.sellBack or 0) end
+    return real(b) < real(a) and b or a
 end
 
 -- ---------- what is still missing for N crafts, given what is in the bags ----------

@@ -310,6 +310,24 @@ test("cooldown recipes never level; a missing tool is a one-time cost", function
     assert(recipes[3].learned and recipes[3].toolCost == 50, "recipe state restored after re-solve")
 end)
 
+test("a few free units of a raw material don't make crafting the intermediate look free", function()
+    -- Real case: 23 owned Medium Leather (98c), Heavy Leather 2s on the AH or crafted from 5 Medium.
+    -- The cheap route buys Heavy Leather; crafting it from mostly bought Medium costs 4.9s each.
+    local recipes = {
+        R{ id = 1, yellow = 125, gray = 135, productID = 4234, reagents = { { 2319, 5 } } },        -- Heavy Leather
+        R{ id = 2, yellow = 160, gray = 180, reagents = { { 4234, 10 }, { 2321, 2 } } },            -- Dusky-like
+        R{ id = 3, yellow = 170, gray = 190, reagents = { { 7392, 4 }, { 4234, 10 }, { 2321, 2 } } }, -- Whelp-like
+    }
+    local ctx = ctxWith({ [4234] = 200, [2319] = 98, [2321] = 100, [7392] = 400 }, recipes,
+        { skill = 150, target = 171, owned = { [2319] = 23 }, free = { [2319] = 23 } })
+    local res = O.optimize(ctx)
+    assert(res.ok)
+    eq(res.steps[1].recipe.id, 2, "cheap route")
+    for _, sh in ipairs(res.shopping) do
+        if sh.itemID == 4234 then eq(sh.source, "ah", "Heavy Leather is bought") end
+    end
+end)
+
 test("owned materials are free", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } },

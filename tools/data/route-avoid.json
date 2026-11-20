@@ -1,3 +1,7 @@
 {
-  "1429": [ { "x": 63.1, "y": 50.1, "r": 120, "note": "cave, avoid (reviewer)" } ]
+  "1429": [ { "x": 63.1, "y": 50.1, "r": 120, "note": "cave, avoid (reviewer)" } ],
+  "1434": [ { "x": 50.0, "y": 27.5, "r": 300, "note": "Mosh'Ogg Ogre Mound (elite ogres)" } ],
+  "1428": [ { "x": 80.0, "y": 41.0, "r": 280, "note": "Dreadmaul Rock (ogre fortress)" } ],
+  "1417": [ { "x": 67.5, "y": 66.5, "r": 250, "note": "Witherbark Village (troll village)" } ],
+  "1445": [ { "x": 42.0, "y": 72.0, "r": 250, "note": "Stonemaul Ruins (ogres)" } ]
 }

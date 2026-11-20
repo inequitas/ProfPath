@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Hot spots</title>
+<style>
+body{background:#1b1b1b;color:#ddd;font:12px sans-serif;margin:0}
+.z{display:inline-block;vertical-align:top;margin:2px;width:330px}
+.z h3{margin:0;font-size:12px}
+svg{width:330px;height:auto;display:block}
+</style></head><body><div id="out">loading…</div>
+<script>
+// Close-up of every hot spot (crop of the zone map): red ring = flagged cave, green dot = entrance.
+fetch('review.json').then(r => r.json()).then(j => {
+  const out = []; let n = 0;
+  j.routes.filter(r => r.hotspot || /hot spot/.test(r.zone)).forEach(r => {
+    n++;
+    let cx = 0, cy = 0; const k = r.route.length / 2;
+    for (let i = 0; i < r.route.length; i += 2) { cx += r.route[i]; cy += r.route[i + 1]; }
+    cx = cx / k * 10; cy = cy / k * 6.68;
+    const w = 220, h = 147; // crop ~22% x 22% of the map
+    const e = r.entrance ? `<circle cx="${r.entrance[0] * 10}" cy="${r.entrance[1] * 6.68}" r="4" fill="#30ff50" stroke="#000"/>` : '';
+    out.push(`<div class="z"><h3>${n}. ${r.zone} ${r.kind} ${r.from}-${r.to} @${(cx/10).toFixed(1)},${(cy/6.68).toFixed(1)} ${r.cave ? 'CAVE' : ''}</h3><svg viewBox="${cx - w/2} ${cy - h/2} ${w} ${h}"><image href="https://wow.zamimg.com/images/wow/classicplus/maps/enus/original/${r.area}.jpg" width="1002" height="668"/><circle cx="${cx}" cy="${cy}" r="13" fill="none" stroke="${r.cave ? '#ff3030' : '#ffd400'}" stroke-width="2.5"/>${e}</svg></div>`);
+  });
+  document.getElementById('out').innerHTML = out.join('');
+});
+</script></body></html>

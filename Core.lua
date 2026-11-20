@@ -142,6 +142,7 @@ function ns.recalc()
 
     local opt = ProfPathDB.options
     local recipes, info = ns.Recipes.build(prof)
+    state.recipes = recipes
     -- Plan (and scan) only the next `range` points unless a fixed target is set ("all" = 300).
     -- Past your current cap the plan includes training the next rank(s), if your level allows.
     local want = opt.target or (opt.range and (prof.rank or 0) + opt.range) or 300
@@ -488,6 +489,114 @@ SlashCmdList.PROFPATH = function(msg)
         opt.effort = math.max(0, math.floor(tonumber(arg)))
         chat(("effort = %d copper per craft (higher = fewer crafts, even if it costs a bit more gold)"):format(opt.effort))
         ns.requestRecalc()
+    --@debug@
+    elseif cmd == "why" and arg ~= "" then
+        if not state.recipes and ns.recalc then pcall(ns.recalc) end
+        -- Collect the output in a copy box (select-all, Ctrl+C) instead of chat.
+        local lines = {}
+        local function pm(c) c = math.floor(c or 0); return ("%dg%02ds%02dc"):format(math.floor(c / 10000), math.floor(c / 100) % 100, c % 100) end
+        local chat = function(t) lines[#lines + 1] = t end
+        local function showCopy()
+            local f = _G.ProfPathCopyBox
+            if not f then
+                f = CreateFrame("Frame", "ProfPathCopyBox", UIParent, "BasicFrameTemplateWithInset")
+                f:SetSize(620, 380); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
+                f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+                f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
+                if f.TitleText then f.TitleText:SetText("ProfPath: Ctrl+C to copy, Esc to close") end
+                local sf = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+                sf:SetPoint("TOPLEFT", 12, -30); sf:SetPoint("BOTTOMRIGHT", -30, 10)
+                local eb = CreateFrame("EditBox", nil, sf)
+                eb:SetMultiLine(true); eb:SetAutoFocus(true); eb:SetFontObject(ChatFontNormal); eb:SetWidth(570)
+                eb:SetScript("OnEscapePressed", function() f:Hide() end)
+                sf:SetScrollChild(eb)
+                f.eb = eb
+                tinsert(UISpecialFrames, "ProfPathCopyBox")
+            end
+            local text = table.concat(lines, "\n"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "")
+            f.eb:SetText(text)
+            f:Show(); f.eb:SetFocus(); f.eb:HighlightText()
+        end
+        -- Test: why a recipe was or wasn't used. /pp why <part of a recipe name>
+        local found = 0
+        for _, r in ipairs(state.recipes or {}) do
+            if (r.name or ""):lower():find(arg, 1, true) and found < 4 then
+                found = found + 1
+                chat(("%s (%d): learned %s, learn %s (%s), skill %d, yellow %d, gray %d%s"):format(r.name, r.id,
+                    tostring(r.learned), r.learnCost and pm(r.learnCost) or "unknown",
+                    r.learnSource and r.learnSource.kind or "-", r.minSkill or 0, r.yellow or 0, r.gray or 0,
+                    r.noLevel and ", no leveling (cooldown)" or ""))
+                for _, rg in ipairs(r.reagents or {}) do
+                    local id, n = rg[1], rg[2]
+                    local ah, src = ns.Prices.ahUnit(id)
+                    local bulk = ns.Prices.ahTotal(id, n * 20)
+                    chat(("   %dx item %d: AH %s (%s), bulk x%d %s each, vendor %s"):format(n, id,
+                        ah and pm(ah) or "none", src or "-", n * 20,
+                        bulk and pm(math.floor(bulk / (n * 20))) or "none",
+                        ns.Prices.vendorBuy(id) and pm(ns.Prices.vendorBuy(id)) or "-"))
+                end
+            end
+        end
+        if found == 0 then
+            -- Not in the plan's list: say which filter dropped it.
+            local prof = state.prof
+            chat(("Not in the plan's list (%d recipes there; profession %s, skill line %s, rank %s/%s)."):format(
+                #(state.recipes or {}), prof and prof.name or "?", prof and tostring(prof.skillLine) or "?",
+                prof and tostring(prof.rank) or "?", prof and tostring(prof.max) or "?"))
+            for id, d in pairs(ns.Data.recipes) do
+                if (d[8] or ""):lower():find(arg, 1, true) and found < 4 then
+                    found = found + 1
+                    local c = ns.Recipes.char()
+                    local learned = c.learned and prof and c.learned[prof.name] and c.learned[prof.name][id]
+                    local ri = ns.Data.recipeItems[id]
+                    local why = {}
+                    if prof and d[1] ~= prof.skillLine then why[#why + 1] = "other skill line " .. d[1] end
+                    if prof and d[4] <= (prof.rank or 0) and not learned then why[#why + 1] = "gray at " .. d[4] end
+                    if ns.Data.cooldown and ns.Data.cooldown[id] then why[#why + 1] = "cooldown" end
+                    if ri and (ri[3] or 0) ~= 0 then why[#why + 1] = "specialization " .. ri[3] end
+                    if ri then
+                        local v, ah = ns.Prices.vendorBuy(ri[1]), ns.Prices.ahUnit(ri[1])
+                        why[#why + 1] = ("recipe item %d: vendor %s, AH %s"):format(ri[1], v and pm(v) or "-", ah and pm(ah) or "none")
+                    else
+                        why[#why + 1] = "trainer recipe"
+                    end
+                    chat(("  %s (%d): %s"):format(d[8], id, table.concat(why, "; ")))
+                end
+            end
+        end
+        -- Re-run the plan as the window does, then once with nothing counted as free stock, and show
+        -- what each assumes for the materials of the recipes above.
+        if state.makeCtx and state.target then
+            local mats = {}
+            for _, r in ipairs(state.recipes or {}) do
+                if (r.name or ""):lower():find(arg, 1, true) then
+                    for _, rg in ipairs(r.reagents or {}) do mats[rg[1]] = true end
+                end
+            end
+            for pass = 1, 2 do
+                local ctx = state.makeCtx(state.target)
+                if pass == 2 then ctx.free = {} end
+                local res = ns.Optimizer.optimize(ctx)
+                chat(("Plan check %d (%s), target %d: %s"):format(pass, pass == 1 and "as the window" or "nothing free",
+                    state.target, res.ok and "ok" or ("stuck at " .. tostring(res.stuckAt))))
+                for _, st in ipairs(res.steps or {}) do
+                    chat(("   %d-%d %s x%d, cost %s"):format(st.fromSkill, st.toSkill, st.recipe.name or "?",
+                        math.ceil(st.expectedCrafts - 1e-9), pm(st.cost)))
+                end
+                for _, sh in ipairs(res.shopping or {}) do
+                    if mats[sh.itemID] or sh.itemID == 4234 or sh.itemID == 2319 then
+                        chat(("   material %d: need %d, own %d, free %d, buy %d via %s at %s each"):format(sh.itemID,
+                            sh.needed, sh.owned or 0, (ctx.free and ctx.free[sh.itemID]) or 0, sh.buy, tostring(sh.source), pm(sh.unitCost)))
+                    end
+                end
+                for _, it in ipairs(res.intermediates or {}) do
+                    chat(("   craft first: %s x%d"):format(it.recipe.name or "?", it.crafts))
+                end
+                chat(("   net %s, cash %s"):format(pm(res.totalCost), pm((res.cash or 0) + (res.learnTotal or 0))))
+            end
+        end
+        showCopy()
+    --@end-debug@
     elseif cmd == "route" and ns.Map and ns.Map.slash(arg) then
         -- handled: /pp route off | show
     elseif cmd == "gather" and (arg == "on" or arg == "off") then

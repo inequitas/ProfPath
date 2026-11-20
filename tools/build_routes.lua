@@ -159,6 +159,8 @@ local HOTSPOT_MIN = 8
 local HOTSPOT_MAX = 2
 local HOTSPOT_RADIUS = 60
 local lastDiag = ""
+local CAVE_RADIUS = 150            -- yards: a hot spot this close to a listed cave is that cave
+local routeCaves = {}
 local SPIKE_YD = 40                  -- steep stretches shorter than this are ignored (a segment is blocked only when sustained)
 local STEEP_COST = 1.3              -- grid-path cost multiplier within 40 yd of steep ground
 local PATH_CAP = 600                -- yards: longest single straight piece of a path
@@ -2015,8 +2017,54 @@ local function buildRoute(pts, W, H, circles, uiMap, seedPct, seedRank)
         alt = altStr }
     end
     -- hot spots: dense clusters (>= HOTSPOT_MIN nodes within 150 yd) that the chosen loop does not reach get a small extra loop
+    local bigC
+    local function bigComponent()
+        if bigC then return bigC end
+        local label, sizes, ncomp = {}, {}, 0
+        for key in pairs(near) do
+            if label[key] == nil then
+                local cx, cy = key % cols, key // cols
+                if isWalkCell(cx, cy) then
+                    ncomp = ncomp + 1
+                    label[key] = ncomp
+                    local stack, sz = { key }, 0
+                    while #stack > 0 do
+                        local k2 = table.remove(stack); sz = sz + 1
+                        local x, y = k2 % cols, k2 // cols
+                        for _, d in ipairs(DIRS) do
+                            local nx, ny = x + d[1], y + d[2]
+                            if nx >= 0 and ny >= 0 then
+                                local nk = ny * cols + nx
+                                local corner = (d[1] == 0 or d[2] == 0) or (isWalkCell(x + d[1], y) and isWalkCell(x, y + d[2]))
+                                if corner and near[nk] and label[nk] == nil and isWalkCell(nx, ny) then label[nk] = ncomp; stack[#stack + 1] = nk end
+                            end
+                        end
+                    end
+                    sizes[ncomp] = sz
+                else
+                    label[key] = 0
+                end
+            end
+        end
+        local bid, bsz = nil, 0
+        for id, sz in pairs(sizes) do if sz > bsz then bid, bsz = id, sz end end
+        bigC = { label = label, id = bid }
+        return bigC
+    end
+    local function steepSides(c)
+        local sides = 0
+        for _, d in ipairs { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } do
+            local hit = false
+            for dd = 20, 60, 20 do
+                local sl = terrain.localSlope(uiMap, (c[1] + d[1] * dd) / W * 100, (c[2] + d[2] * dd) / H * 100, 30, W, H)
+                if sl and sl > STEEP then hit = true; break end
+            end
+            if hit then sides = sides + 1 end
+        end
+        return sides
+    end
     local function hotspots(res0)
-        local out = {}
+        local out, dropped = {}, 0
         local loop = res0.polyY
         local unc = {}
         for i = 1, n do
@@ -2049,6 +2097,30 @@ local function buildRoute(pts, W, H, circles, uiMap, seedPct, seedRank)
                 centre = bp
             end
             for _, j in ipairs(bestMembers) do used[j] = true end
+            local caveFlag, entr = nil, nil
+            if useT then
+                local nonwalk = 0
+                for _, j in ipairs(bestMembers) do if not isWalkP(Q[j][1], Q[j][2]) then nonwalk = nonwalk + 1 end end
+                caveFlag = (nonwalk >= 0.6 * #bestMembers) or (steepSides({ cx, cy }) >= 3)
+            end
+            do
+                local big = bigComponent()
+                if big.id then
+                    local ccx, ccy = math.floor(cx / GRID), math.floor(cy / GRID)
+                    local bd = math.huge
+                    for dy = -40, 40 do
+                        for dx = -40, 40 do
+                            local x, y = ccx + dx, ccy + dy
+                            if x >= 0 and y >= 0 and big.label[y * cols + x] == big.id then
+                                local px, py = (x + 0.5) * GRID, (y + 0.5) * GRID
+                                local d = (px - cx) ^ 2 + (py - cy) ^ 2
+                                if d < bd then bd, entr = d, { px, py } end
+                            end
+                        end
+                    end
+                end
+            end
+            if centre and inCircles(circles, { cx, cy }) then dropped = dropped + 1; centre = nil end
             if centre then
                 local circle, clean = {}, true
                 for k = 0, 11 do
@@ -2060,11 +2132,23 @@ local function buildRoute(pts, W, H, circles, uiMap, seedPct, seedRank)
                 if clean then
                 local h = finish({ poly = circle, idx = bestMembers, stops = #circle, method = "hotspot", preLen = 0, postLen = 0, preStops = 0, covered = 0, region = #bestMembers, stopsY = circle }, "hot spot")
                 h.hotspot = true
+                h.cave = nil
+                local listed
+                for _, cv in ipairs(routeCaves[uiMap] or {}) do
+                    if dist({ cv.x * W / 100, cv.y * H / 100 }, { cx, cy }) <= CAVE_RADIUS then listed = cv; break end
+                end
+                if listed then
+                    h.cave = true; h.name = listed.name; h.entrance = { listed.entrance[1], listed.entrance[2] }
+                elseif entr and dist(entr, { cx, cy }) > 60 then
+                    h.entrance = { tonumber(string.format("%.1f", entr[1] / W * 100)), tonumber(string.format("%.1f", entr[2] / H * 100)) }
+                end
+                h.centreXY = { tonumber(string.format("%.1f", cx / W * 100)), tonumber(string.format("%.1f", cy / H * 100)) }
                 out[#out + 1] = h
+                else dropped = dropped + 1
                 end
             end
         end
-        return out
+        return out, dropped
     end
     local res = finish(cands[1], methodsAlt)
     -- a second walkable component with at least 40% as many nodes gets its own loop
@@ -2118,7 +2202,9 @@ local function buildRoute(pts, W, H, circles, uiMap, seedPct, seedRank)
     do
         local tail = res
         while tail.second do tail = tail.second end
-        for _, h in ipairs(hotspots(res)) do tail.second = h; tail = h end
+        local hl, dr = hotspots(res)
+        res.hsDropped = dr
+        for _, h in ipairs(hl) do tail.second = h; tail = h end
     end
     res.compNodes = compRank and compRank[1] and compRank[1][2] or 0
     res.compCount = compRank and #compRank or 0
@@ -2205,6 +2291,15 @@ local routeHints = {}
 do
     local fh = io.open(ROOT .. "/tools/data/route-hints.json", "rb")
     if fh then routeHints = parse_json((fh:read("a"):gsub("^\239\187\191", ""))); fh:close() end
+end
+do
+    local fh = io.open(ROOT .. "/tools/data/route-caves.json", "rb")
+    if fh then
+        local raw = parse_json((fh:read("a"):gsub("^\239\187\191", ""))); fh:close()
+        for k, v in pairs(raw) do
+            if type(k) == "string" and k:sub(1, 1) ~= "_" and tonumber(k) then routeCaves[tonumber(k)] = v end
+        end
+    end
 end
 local overrides = {}
 do
@@ -2314,6 +2409,8 @@ local flagRows, slopeViol, methodCount = {}, {}, {}
 local totalLong = 0
 local detailRows = {}
 local retryRows = {}
+local caveRows = {}
+local hsDroppedTotal = 0
 local touchedRows = {}
 local function checkScore(r)
     local slopeTerm = 0
@@ -2434,6 +2531,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                         if usedRank or not r0 then r0 = best or r0 end
                     end
                 end
+                hsDroppedTotal = hsDroppedTotal + ((r0 and r0.hsDropped) or 0)
                 local variants = {}
                 do local rr = r0; while rr do variants[#variants + 1] = rr; rr = rr.second end end
                 local rFirst
@@ -2451,7 +2549,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     local ov = overrides[string.format("%s:%d-%d:%d", prof, from, to, c.area)]
                     if ov and vi == 1 then r = applyOverride(gen, ov, c.pts, sz[1], sz[2], z.map) end
                 end
-                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "", (vi >= 2 and (" variant = " .. vi .. ",") or "") .. (r.hotspot and " hotspot = true," or "")) .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
+                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "", (vi >= 2 and (" variant = " .. vi .. ",") or "") .. (r.hotspot and " hotspot = true," or "") .. (r.cave and " cave = true," or "") .. (r.name and string.format(" name = %q,", r.name) or "") .. (r.entrance and string.format(" entrance = { %.1f, %.1f },", r.entrance[1], r.entrance[2]) or "")) .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
                 out[#out + 1] = string.format('        { area = %d, map = %d, side = "%s", nodes = %d, guide = %s,%s },',
                     c.area, z.map, z.side, c.nodes, tostring(c.guide and true or false), rs)
                 if r then
@@ -2482,6 +2580,9 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     if r.maxhop > globalMax then globalMax = r.maxhop end
                     do
                         local gm = gen.method or "?"
+                        if r.hotspot then
+                            caveRows[#caveRows + 1] = string.format("%s %s %d-%d: cave=%s%s centre=(%s) entrance=(%s)", prof, z.name, from, to, tostring(r.cave), r.name and (" name=" .. r.name) or "", r.centreXY and (r.centreXY[1] .. "," .. r.centreXY[2]) or "?", r.entrance and (r.entrance[1] .. "," .. r.entrance[2]) or "none")
+                        end
                         if (prof == "mining" and z.name:find("Mulgore") and from == 1) or z.name:find("Thousand Needles") then
                             detailRows[#detailRows + 1] = string.format("%s %s %d-%d WINNER=%s: %s", prof, z.name, from, to, gm, gen.alt or "")
                         end
@@ -2532,10 +2633,10 @@ do
     for _, e in ipairs(reviewRoutes) do
         local r = e.rec
         local check = checkScore(r)
-        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"excluded":[%d,%d],"method":"%s","maxslope":%s,"hotspot":%s,"manual":%s,"note":%q,"route":[%s],"generated":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
+        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"excluded":[%d,%d],"method":"%s","maxslope":%s,"hotspot":%s,"cave":%s,"name":%s,"entrance":%s,"manual":%s,"note":%q,"route":[%s],"generated":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
             e.id, e.prof, e.from, e.to, e.z.area, e.z.map, e.z.name, e.z.side, tostring(e.guide), math.floor(r.len + 0.5), r.share, r.stops,
             r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check, r.D, R, math.floor(e.W + 0.5), math.floor(e.H + 0.5),
-            e.et, e.ea, r.manual and "manual" or (r.method or "tour"), r.maxslope and string.format("%.2f", r.maxslope) or "null", tostring(r.hotspot and true or false), tostring(r.manual and true or false), r.note or "", table.concat(r.flat, ","), table.concat(e.gen.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
+            e.et, e.ea, r.manual and "manual" or (r.method or "tour"), r.maxslope and string.format("%.2f", r.maxslope) or "null", tostring(r.hotspot and true or false), r.cave == nil and "null" or tostring(r.cave), r.name and string.format("%q", r.name) or "null", r.entrance and string.format("[%.1f,%.1f]", r.entrance[1], r.entrance[2]) or "null", tostring(r.manual and true or false), r.note or "", table.concat(r.flat, ","), table.concat(e.gen.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
     end
     os.execute('mkdir "' .. (ROOT .. "/tools/review"):gsub("/", "\\") .. '" 2>nul')
     local rf = assert(io.open(ROOT .. "/tools/review/review.json", "wb"))
@@ -2558,6 +2659,8 @@ do
     for k, v in pairs(methodCount) do mc[#mc + 1] = k .. "=" .. v end
     table.sort(mc)
     print("routes touched by the tangle fix:" .. string.char(10) .. "  " .. table.concat(touchedRows, string.char(10) .. "  "))
+    print("hot spots dropped by avoid/keep-out circles: " .. hsDroppedTotal)
+    print("hot spots (" .. #caveRows .. "):" .. string.char(10) .. "  " .. table.concat(caveRows, string.char(10) .. "  "))
     print("seed retries:" .. string.char(10) .. "  " .. table.concat(retryRows, string.char(10) .. "  "))
     print("method detail (all candidates, best first):" .. string.char(10) .. "  " .. table.concat(detailRows, string.char(10) .. "  "))
     print("straight pieces > " .. PATH_CAP .. " yd before the cap (tour paths): " .. totalLong)

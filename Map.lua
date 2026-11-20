@@ -33,7 +33,8 @@ end
 local function save()
     if not ProfPathDB then return end
     if current then
-        ProfPathDB.route = { map = current.map, route = current.route, label = current.label, open = current.open, spots = current.spots }
+        ProfPathDB.route = { map = current.map, route = current.route, label = current.label, open = current.open, spots = current.spots,
+            entrance = current.entrance, cave = current.cave }
     else
         ProfPathDB.route = nil
     end
@@ -170,6 +171,14 @@ local function drawWorld()
             l:SetEndPoint("TOPLEFT", overlay, pts[j * 2 - 1] / 100 * w, -pts[j * 2] / 100 * h)
             l:Show()
         end
+    end
+    if current and current.map == mapID and current.entrance then
+        local d = getWorldDot()
+        d:SetSize(DOT_SIZE * 2 / scale, DOT_SIZE * 2 / scale)
+        d:SetColorTexture(0.2, 1, 0.3, 1)
+        d:ClearAllPoints()
+        d:SetPoint("CENTER", overlay, "TOPLEFT", current.entrance[1] / 100 * w, -current.entrance[2] / 100 * h)
+        d:Show()
     end
     for i = wLinesUsed + 1, #wLines do wLines[i]:Hide() end
     for i = wDotsUsed + 1, #wDots do wDots[i]:Hide() end
@@ -374,7 +383,8 @@ function Map.show(zoneEntry, label, spots)
     for _, s in ipairs(spots or {}) do
         if s.map == zoneEntry.map and type(s.route) == "table" and #s.route >= 4 then sp[#sp + 1] = s.route end
     end
-    current = { map = zoneEntry.map, route = copy, label = label, open = zoneEntry.open, spots = sp }
+    current = { map = zoneEntry.map, route = copy, label = label, open = zoneEntry.open, spots = sp,
+        entrance = zoneEntry.entrance, cave = zoneEntry.cave }
     pcall(setupWorld) -- in case the world map wasn't loaded yet at login
     world = nil
     save()
@@ -414,6 +424,8 @@ function Map.waypoint()
         end
     end)
     local x, y = pts[best * 2 - 1] / 100, pts[best * 2] / 100
+    -- A hot spot (cave or mine) has an entrance on open ground: send the player there instead.
+    if current.entrance then x, y = current.entrance[1] / 100, current.entrance[2] / 100 end
     local done = false
     pcall(function()
         if C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
@@ -545,7 +557,8 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if event == "PLAYER_LOGIN" then
         local saved = ProfPathDB and ProfPathDB.route
         if validRoute(saved) then
-            current = { map = saved.map, route = saved.route, label = saved.label, open = saved.open, spots = saved.spots }
+            current = { map = saved.map, route = saved.route, label = saved.label, open = saved.open, spots = saved.spots,
+                entrance = saved.entrance, cave = saved.cave }
         end
         pcall(setupWorld)
         refresh()

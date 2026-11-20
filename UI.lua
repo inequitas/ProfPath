@@ -632,7 +632,7 @@ local function zoneList(prof, kind)
         if z.hotspot then ok = ok and lastShown == z.area elseif ok and shown < 4 then shown = shown + 1; lastShown = z.area else ok = false end
         if ok then
             local zone = ns.Zones and ns.Zones[z.area]
-            local name = z.hotspot and "Hot spot (mine or dense cluster)"
+            local name = z.hotspot and (z.cave and ((z.name or "Cave or mine") .. " (cave, ore inside)") or "Hot spot (dense cluster)")
                 or (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
             local bits = {}
             local covered = z.nodes and z.share and math.floor(z.nodes * z.share + 0.5)
@@ -640,6 +640,9 @@ local function zoneList(prof, kind)
             if covered then bits[#bits + 1] = covered .. " nodes along it" end
             if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
             if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
+            if z.hotspot and z.cave and z.entrance then
+                bits[#bits + 1] = ("entrance at %.0f, %.0f"):format(z.entrance[1], z.entrance[2])
+            end
             text(z.hotspot and "GameFontHighlightSmall" or "GameFontHighlight", z.hotspot and 26 or 10, y + 4, CONTENT - 166,
                 name .. "  |cff888888" .. table.concat(bits, "  -  ") .. "|r")
             if z.route and ns.Map then
@@ -656,6 +659,10 @@ local function zoneList(prof, kind)
                         ns.Map.waypoint()
                         print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set)%s. /pp route off hides it.")
                             :format(name, #spots > 0 and (", with %d hot spot%s in yellow on the world map"):format(#spots, #spots > 1 and "s" or "") or ""))
+                        if z.cave and z.entrance then
+                            print(("|cff33ccffProfPath|r: this is a cave or mine. The waypoint (green dot on the map) is its entrance at %.0f, %.0f; the ore is inside, so follow the cave tunnels.")
+                                :format(z.entrance[1], z.entrance[2]))
+                        end
                     end
                     UI.show(lastState)
                 end)
