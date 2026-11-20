@@ -648,9 +648,14 @@ local function zoneList(prof, kind)
                     if isActive then
                         ns.Map.clear()
                     else
-                        ns.Map.show(z, ("%s %d-%d: %s"):format(label, band.from, band.to, name))
+                        local spots = {}
+                        if not z.hotspot then
+                            for _, o in ipairs(band.zones) do if o.hotspot and o.area == z.area then spots[#spots + 1] = o end end
+                        end
+                        ns.Map.show(z, ("%s %d-%d: %s"):format(label, band.from, band.to, name), spots)
                         ns.Map.waypoint()
-                        print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set). /pp route off hides it."):format(name))
+                        print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set)%s. /pp route off hides it.")
+                            :format(name, #spots > 0 and (", with %d hot spot%s in yellow on the world map"):format(#spots, #spots > 1 and "s" or "") or ""))
                     end
                     UI.show(lastState)
                 end)

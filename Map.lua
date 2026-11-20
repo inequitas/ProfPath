@@ -33,7 +33,7 @@ end
 local function save()
     if not ProfPathDB then return end
     if current then
-        ProfPathDB.route = { map = current.map, route = current.route, label = current.label, open = current.open }
+        ProfPathDB.route = { map = current.map, route = current.route, label = current.label, open = current.open, spots = current.spots }
     else
         ProfPathDB.route = nil
     end
@@ -129,6 +129,10 @@ local function drawWorld()
     local mapID = WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
     local list = {}
     if current and current.map == mapID then list[1] = { route = current.route, open = current.open, color = COLOR } end
+    -- the active route's hot spots (mines, dense clusters) as small yellow loops
+    if current and current.map == mapID then
+        for _, s in ipairs(current.spots or {}) do list[#list + 1] = { route = s, color = { 1, 0.85, 0.1, 0.95 } } end
+    end
     for _, e in ipairs(extra) do if e.map == mapID then list[#list + 1] = e end end
     local ok = mapID and #list > 0
     local c = canvas()
@@ -358,14 +362,19 @@ end
 
 -- ---------- public API ----------
 
-function Map.show(zoneEntry, label)
+-- spots (optional): hot-spot entries of the same zone, drawn as small yellow loops on the world map.
+function Map.show(zoneEntry, label, spots)
     if type(zoneEntry) ~= "table" or type(zoneEntry.route) ~= "table" or not zoneEntry.map then
         return false
     end
     local copy = {}
     for i, v in ipairs(zoneEntry.route) do copy[i] = v end
     if #copy < 4 then return false end
-    current = { map = zoneEntry.map, route = copy, label = label, open = zoneEntry.open }
+    local sp = {}
+    for _, s in ipairs(spots or {}) do
+        if s.map == zoneEntry.map and type(s.route) == "table" and #s.route >= 4 then sp[#sp + 1] = s.route end
+    end
+    current = { map = zoneEntry.map, route = copy, label = label, open = zoneEntry.open, spots = sp }
     pcall(setupWorld) -- in case the world map wasn't loaded yet at login
     world = nil
     save()
@@ -536,7 +545,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if event == "PLAYER_LOGIN" then
         local saved = ProfPathDB and ProfPathDB.route
         if validRoute(saved) then
-            current = { map = saved.map, route = saved.route, label = saved.label, open = saved.open }
+            current = { map = saved.map, route = saved.route, label = saved.label, open = saved.open, spots = saved.spots }
         end
         pcall(setupWorld)
         refresh()
