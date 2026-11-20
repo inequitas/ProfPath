@@ -9,19 +9,52 @@ svg,img{width:620px;height:auto;display:block}
 <div id="out">loading…</div>
 <script>
 // Our routes (review.json) next to wow-professions.com Classic guide maps, for visual comparison.
-const G = 'https://www.wow-professions.com/images/classic/';
+const G = 'https://www.wow-professions.com/images/forever/';
 const GUIDES = [
-  ['mining',1,'Durotar','mining-leveling-durotar.jpg'],['mining',1,'Dun Morogh','mining-leveling-dun-morogh.jpg'],
-  ['mining',1,'Elwynn Forest','mining-leveling-elwynn.jpg'],['mining',1,'Tirisfal Glades','mining-leveling-tirisfal.jpg'],
-  ['mining',1,'Mulgore','mining-leveling-mulgore.jpg'],['mining',1,'Darkshore','mining-leveling-darkshore.jpg'],
-  ['mining',65,'Hillsbrad Foothills','mining-leveling-hillsbrad.jpg'],['mining',65,'Redridge Mountains','mining-leveling-redridge.jpg'],
-  ['mining',65,'The Barrens','mining-leveling-barrens.jpg'],['mining',65,'Ashenvale','mining-leveling-ashenvale.jpg'],
-  ['mining',125,'Arathi Highlands','classic-wow-iron-ore-farming-arathi.jpg'],['mining',125,'Desolace','classic-wow-iron-ore-farming-desolace.jpg'],
-  ['mining',125,'Thousand Needles','classic-wow-iron-ore-farming-thousand-needles.jpg'],
-  ['mining',175,'The Hinterlands','classic-wow-mithril-farming-hinterlands.jpg'],['mining',175,'Tanaris','classic-wow-mithril-farming-tanaris.jpg'],
-  ['mining',225,"Un'Goro Crater",'classic-wow-thorium-farming-ungoro.jpg'],['mining',225,'Eastern Plaguelands','classic-wow-thorium-farming-eastern.jpg'],
-  ['mining',225,'Burning Steppes','classic-wow-thorium-farming-burning.jpg'],['mining',225,'Winterspring','classic-wow-thorium-farming-winterspring.jpg'],
-  ['mining',225,'Silithus','classic-wow-thorium-farming-silithus.jpg'],
+  ['mining',1,"Durotar",'mining-leveling-forever-durotar.webp'],
+  ['mining',1,"Mulgore",'mining-leveling-forever-mulgore-forge.webp'],
+  ['mining',1,"Tirisfal Glades",'mining-leveling-forever-tirisfal-glades.webp'],
+  ['mining',1,"Zephras Isle",'mining-leveling-forever-zephras-isle.webp'],
+  ['mining',1,"Elwynn Forest",'mining-leveling-forever-elwynn-forest.webp'],
+  ['mining',1,"Dun Morogh",'mining-leveling-forever-dun-morogh.webp'],
+  ['mining',1,"Teldrassil",'mining-leveling-forever-teldrassil.webp'],
+  ['mining',65,"Wetlands",'mining-leveling-forever-wetlands.webp'],
+  ['mining',65,"Silverpine Forest",'mining-leveling-forever-silverpine-forest.webp'],
+  ['mining',65,"Westfall",'mining-leveling-forever-westfall.webp'],
+  ['mining',65,"Hillsbrad Foothills",'mining-leveling-forever-hillsbrad-foothills.webp'],
+  ['mining',65,"The Barrens",'mining-leveling-forever-the-barrens.webp'],
+  ['mining',65,"Ashenvale",'mining-leveling-forever-ashenvale.webp'],
+  ['mining',65,"Stonetalon Mountains",'mining-leveling-forever-stonetalon-mountains.webp'],
+  ['mining',125,"Arathi Highlands",'mining-leveling-forever-arathi-highlands.webp'],
+  ['mining',125,"Thousand Needles",'mining-leveling-forever-thousand-needles.webp'],
+  ['mining',125,"Desolace",'mining-leveling-forever-desolace.webp'],
+  ['mining',175,"The Hinterlands",'mining-leveling-forever-the-hinterlands.webp'],
+  ['mining',175,"Tanaris",'mining-leveling-forever-tanaris.webp'],
+  ['mining',225,"Un'Goro Crater",'mining-leveling-forever-ungoro-crater.webp'],
+  ['mining',225,"Blasted Lands",'mining-leveling-forever-blasted-lands.webp'],
+  ['mining',225,"Felwood",'mining-leveling-forever-felwood.webp'],
+  ['mining',275,"Un'Goro Crater",'mining-leveling-forever-ungoro-crater-rich-thorium.webp'],
+  ['mining',275,"Eastern Plaguelands",'mining-leveling-forever-eastern-plaguelands.webp'],
+  ['mining',275,"Winterspring",'mining-leveling-forever-winterspring.webp'],
+  ['mining',275,"Burning Steppes",'mining-leveling-forever-burning-steppes.webp'],
+  ['herbalism',1,"Durotar",'herbalism-leveling-forever-durotar.webp'],
+  ['herbalism',1,"Mulgore",'herbalism-leveling-forever-mulgore.webp'],
+  ['herbalism',1,"Tirisfal Glades",'herbalism-leveling-forever-tirisfal-glades.webp'],
+  ['herbalism',1,"Zephras Isle",'herbalism-leveling-forever-zephras-isle.webp'],
+  ['herbalism',1,"Elwynn Forest",'herbalism-leveling-forever-elwynn-forest.webp'],
+  ['herbalism',1,"Dun Morogh",'herbalism-leveling-forever-dun-morogh.webp'],
+  ['herbalism',1,"Teldrassil",'herbalism-leveling-forever-teldrassil.webp'],
+  ['herbalism',70,"Silverpine Forest",'herbalism-leveling-forever-silverpine-forest.webp'],
+  ['herbalism',70,"Loch Modan",'herbalism-leveling-forever-loch-modan.webp'],
+  ['herbalism',70,"Darkshore",'herbalism-leveling-forever-darkshore.webp'],
+  ['herbalism',115,"Hillsbrad Foothills",'herbalism-leveling-forever-hillsbrad-foothills.webp'],
+  ['herbalism',115,"Stonetalon Mountains",'herbalism-leveling-forever-stonetalon-mountains.webp'],
+  ['herbalism',170,"Stranglethorn Vale",'herbalism-leveling-forever-stranglethorn-vale.webp'],
+  ['herbalism',170,"Arathi Highlands",'herbalism-leveling-forever-arathi-highlands.webp'],
+  ['herbalism',205,"Tanaris",'herbalism-leveling-forever-tanaris.webp'],
+  ['herbalism',205,"Searing Gorge",'herbalism-leveling-forever-searing-gorge.webp'],
+  ['herbalism',225,"The Hinterlands",'herbalism-leveling-forever-the-hinterlands.webp'],
+  ['herbalism',260,"Felwood",'herbalism-leveling-forever-felwood.webp'],
 ];
 fetch('review.json').then(r => r.json()).then(j => {
   const html = [];
@@ -38,7 +71,7 @@ fetch('review.json').then(r => r.json()).then(j => {
       left = `<svg viewBox="0 0 1002 668"><image href="https://wow.zamimg.com/images/wow/classicplus/maps/enus/original/${r.area}.jpg" width="1002" height="668"/>${dots}<polygon points="${pts.join(' ')}" fill="none" stroke="#ff3b10" stroke-width="6" stroke-linejoin="round"/></svg>`;
       title = `${i + 1}. ${zone} — ours: ${r.kind} ${r.from}-${r.to} (${r.id}, ${r.len} yd, share ${r.share}) — guide band ${from}+`;
     }
-    html.push(`<div class="pair" id="p${i + 1}"><div><h3>${title}</h3>${left}</div><div><h3>wow-professions.com (Classic)</h3><img src="${G + img}"></div></div>`);
+    html.push(`<div class="pair" id="p${i + 1}"><div><h3>${title}</h3>${left}</div><div><h3>wow-professions.com (WoW Forever)</h3><img src="${G + img}"></div></div>`);
   });
   document.getElementById('out').innerHTML = html.join('');
 });

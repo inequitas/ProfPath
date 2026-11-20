@@ -625,18 +625,23 @@ local function zoneList(prof, kind)
     text("GameFontNormal", 4, y, CONTENT - 8, ("Where to go for %d-%d"):format(band.from, band.to))
     y = y + 20
     local active = ns.Map and ns.Map.active and ns.Map.active()
-    local shown = 0
+    local shown, lastShown = 0, nil
     for _, z in ipairs(band.zones) do
-        if shown < 4 and (z.side == "C" or not side or z.side == side) then
-            shown = shown + 1
+        -- Up to 4 zones (main loops); a zone's hot spots (mines, dense clusters) follow it, indented.
+        local ok = (z.side == "C" or not side or z.side == side)
+        if z.hotspot then ok = ok and lastShown == z.area elseif ok and shown < 4 then shown = shown + 1; lastShown = z.area else ok = false end
+        if ok then
             local zone = ns.Zones and ns.Zones[z.area]
-            local name = (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
+            local name = z.hotspot and "Hot spot (mine or dense cluster)"
+                or (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
             local bits = {}
-            if z.nodes then bits[#bits + 1] = z.nodes .. " nodes" end
-            if z.share and z.share < 0.95 then bits[#bits + 1] = ("route covers %d%%"):format(math.floor(z.share * 100 + 0.5)) end
-            if z.guide then bits[#bits + 1] = "Wowhead pick" end
-            if z.side == "C" then bits[#bits + 1] = "contested" end
-            text("GameFontHighlight", 10, y + 4, CONTENT - 150, name .. "  |cff888888" .. table.concat(bits, "  -  ") .. "|r")
+            local covered = z.nodes and z.share and math.floor(z.nodes * z.share + 0.5)
+            if z.len and not z.hotspot then bits[#bits + 1] = ("loop %.1f km"):format(z.len / 1000) end
+            if covered then bits[#bits + 1] = covered .. " nodes along it" end
+            if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
+            if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
+            text(z.hotspot and "GameFontHighlightSmall" or "GameFontHighlight", z.hotspot and 26 or 10, y + 4, CONTENT - 166,
+                name .. "  |cff888888" .. table.concat(bits, "  -  ") .. "|r")
             if z.route and ns.Map then
                 local isActive = active and active.map == z.map and active.route and active.route[1] == z.route[1] and active.route[2] == z.route[2]
                 button(isActive and "Hide route" or "Show route", CONTENT - 134, 128, function()

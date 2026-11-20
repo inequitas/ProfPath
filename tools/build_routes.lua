@@ -101,17 +101,17 @@ local STARTERS = { "Elwynn Forest", "Dun Morogh", "Teldrassil", "Durotar", "Mulg
 
 local BANDS = {
     mining = {
-        { 1, 65, STARTERS, true, { "Darkshore" } }, { 65, 125, { "Ashenvale", "Redridge Mountains", "The Barrens", "Thousand Needles" }, false, { "Hillsbrad Foothills" } },
+        { 1, 65, STARTERS, true, { "Darkshore", "Teldrassil!" } }, { 65, 125, { "Ashenvale", "Redridge Mountains", "The Barrens", "Thousand Needles" }, false, { "Hillsbrad Foothills", "Wetlands!", "Silverpine Forest!", "Westfall!", "Stonetalon Mountains!" } },
         { 125, 175, { "Arathi Highlands", "Desolace", "Stranglethorn Vale", "Thousand Needles" } },
         { 175, 225, { "Azshara", "Tanaris", "The Hinterlands" } },
-        { 225, 275, {}, false, { "Un'Goro Crater", "Burning Steppes" } }, { 275, 300, {}, false, { "Un'Goro Crater", "Burning Steppes" } },
+        { 225, 275, {}, false, { "Un'Goro Crater", "Burning Steppes", "Blasted Lands!", "Felwood!" } }, { 275, 300, {}, false, { "Un'Goro Crater", "Burning Steppes" } },
     },
     herbalism = {
         { 1, 70, STARTERS, true }, { 70, 115, { "Darkshore", "Loch Modan", "Silverpine Forest" } },
         { 115, 170, { "Hillsbrad Foothills", "Wetlands", "Stonetalon Mountains" } },
         { 170, 205, { "Stranglethorn Vale", "Arathi Highlands" } },
         { 205, 225, { "Alterac Mountains", "Tanaris", "Searing Gorge" } },
-        { 225, 260, {} }, { 260, 300, {} },
+        { 225, 260, {} }, { 260, 300, {}, false, { "Felwood!" } },
     },
     skinning = {
         { 1, 75, STARTERS, true }, { 75, 125, { "The Barrens", "Loch Modan", "Darkshore" } },
@@ -143,6 +143,22 @@ local STEEP_PASS = 1.7               -- a thin band (<= PASS_CELLS cells) of slo
 local PASS_CELLS = 3                -- 60 yd
 local PASS_COST = 4
 local SPLIT_MIN_YD = 1500            -- grid distance between the two cluster seeds for a corridor to be split
+local SWEEP_RATIO = 2.5               -- principal / perpendicular spread that makes a region "elongated"
+local SWEEP_BIN = 0.04                -- sweep bin width as a share of the axis length
+local SWEEP_INSET = 40                -- yards the sweep sides sit inside the node band
+local SWEEP_CORRIDOR = 200            -- yards: sweep segments must stay this close to a node
+local LAP_GAP = 250                   -- yards: gaps up to twice this are closed when building the concave hull
+local LAP_INSET = 50                  -- yards the lap sits inside the hull
+local LAP_DP = 25
+local LAP_MAX_REPAIRS = 40
+local LOOP_MAX = 4000                -- yards: a compact region stops growing when its estimated loop would pass this
+local LOOP_TARGET = 3500
+local MIN_COMPACT = 15              -- nodes
+local EDGE_RADIUS = 300             -- yards: the edge loop only follows the valley edge this close to the compact region
+local HOTSPOT_MIN = 8
+local HOTSPOT_MAX = 2
+local HOTSPOT_RADIUS = 60
+local lastDiag = ""
 local SPIKE_YD = 40                  -- steep stretches shorter than this are ignored (a segment is blocked only when sustained)
 local STEEP_COST = 1.3              -- grid-path cost multiplier within 40 yd of steep ground
 local PATH_CAP = 600                -- yards: longest single straight piece of a path
@@ -676,7 +692,7 @@ end
 local DIRS = { { 0, -1 }, { 1, -1 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 } }
 
 -- pts: nodes in map percent; W,H: zone size in yards; circles: avoid/town circles (yards); uiMap: for terrain
-local function buildRoute(pts, W, H, circles, uiMap)
+local function buildRoute(pts, W, H, circles, uiMap, seedPct, seedRank)
     local n = #pts
     if n == 0 then return nil end
     local D = MAX_SEG
@@ -886,94 +902,7 @@ local function buildRoute(pts, W, H, circles, uiMap)
     end
 
     ------------------------------------------------------------ method b: stop tour
-    local compRank
-    local function tourMethod(rank, minC, spur, which)
-        -- walkable components of the 20 yd grid; the region is the component holding the most nodes
-        local label = {}
-        local ncomp = 0
-        for key in pairs(near) do
-            if label[key] == nil then
-                local cx, cy = key % cols, key // cols
-                if isWalkCell(cx, cy) then
-                    ncomp = ncomp + 1
-                    label[key] = ncomp
-                    local stack = { key }
-                    while #stack > 0 do
-                        local k2 = table.remove(stack)
-                        local x, y = k2 % cols, k2 // cols
-                        for _, d in ipairs(DIRS) do
-                            local nx, ny = x + d[1], y + d[2]
-                            if nx >= 0 and ny >= 0 then
-                                local nk = ny * cols + nx
-                                local corner = (d[1] == 0 or d[2] == 0) or (isWalkCell(x + d[1], y) and isWalkCell(x, y + d[2]))
-                                if corner and near[nk] and label[nk] == nil and isWalkCell(nx, ny) then label[nk] = ncomp; stack[#stack + 1] = nk end
-                            end
-                        end
-                    end
-                else
-                    label[key] = 0
-                end
-            end
-        end
-        local function compOf(p) return label[math.floor(p[2] / GRID) * cols + math.floor(p[1] / GRID)] end
-        local cn = {}
-        for i = 1, n do
-            if A[i] then local l = compOf(A[i]); if l and l > 0 then cn[l] = (cn[l] or 0) + 1 end end
-        end
-        local ranked = {}
-        for l, c in pairs(cn) do ranked[#ranked + 1] = { l, c } end
-        table.sort(ranked, function(a, b) if a[2] ~= b[2] then return a[2] > b[2] end return a[1] < b[1] end)
-        compRank = ranked
-        local bestComp = ranked[rank or 1] and ranked[rank or 1][1]
-        if not bestComp then return nil end
-        local cand = {}
-        for i = 1, n do if A[i] and compOf(A[i]) == bestComp then cand[#cand + 1] = i end end
-        -- grow the region from the best-connected node (straight valid links first, nearest node otherwise)
-        local nb = {}
-        for _, i in ipairs(cand) do nb[i] = {} end
-        for a = 1, #cand do
-            local i = cand[a]
-            for b = a + 1, #cand do
-                local j = cand[b]
-                local d = dist(A[i], A[j])
-                if d <= MAX_SEG and segOK(A[i], A[j]) then
-                    nb[i][#nb[i] + 1] = { j, d }; nb[j][#nb[j] + 1] = { i, d }
-                end
-            end
-        end
-        local seed = cand[1]
-        for _, i in ipairs(cand) do if #nb[i] > #nb[seed] then seed = i end end
-        local inRegion, sel, bestD = { [seed] = true }, { seed }, {}
-        local function relax(v)
-            for _, e in ipairs(nb[v]) do
-                local w, d = e[1], e[2]
-                if not inRegion[w] and (not bestD[w] or d < bestD[w]) then bestD[w] = d end
-            end
-        end
-        relax(seed)
-        while #sel < MAXNODES and #sel < #cand do
-            local pick, pd
-            for w, d in pairs(bestD) do
-                if not inRegion[w] and (not pd or d < pd or (d == pd and w < pick)) then pick, pd = w, d end
-            end
-            if not pick then
-                for _, j in ipairs(cand) do
-                    if not inRegion[j] then
-                        local d = math.huge
-                        for _, i in ipairs(sel) do d = math.min(d, dist(A[i], A[j])) end
-                        if not pd or d < pd then pick, pd = j, d end
-                    end
-                end
-            end
-            if not pick then break end
-            inRegion[pick] = true; sel[#sel + 1] = pick; bestD[pick] = nil
-            relax(pick)
-        end
-        local S0 = setCover(sel)
-        if #S0 < 2 then return nil end
-
-        -- grid pathfinding: Dijkstra over 8-connected walkable cells from every stop
-        local function keyOf(p) return math.floor(p[2] / GRID) * cols + math.floor(p[1] / GRID) end
+    local firstCand
         local function dijkstra(sk)
             local dd, prv = { [sk] = 0 }, {}
             local hd, hk, hn = { 0 }, { sk }, 1
@@ -1018,6 +947,126 @@ local function buildRoute(pts, W, H, circles, uiMap)
             end
             return dd, prv
         end
+    local compRank
+    local function tourMethod(rank, minC, spur, which)
+        -- walkable components of the 20 yd grid; the region is the component holding the most nodes
+        local label = {}
+        local ncomp = 0
+        for key in pairs(near) do
+            if label[key] == nil then
+                local cx, cy = key % cols, key // cols
+                if isWalkCell(cx, cy) then
+                    ncomp = ncomp + 1
+                    label[key] = ncomp
+                    local stack = { key }
+                    while #stack > 0 do
+                        local k2 = table.remove(stack)
+                        local x, y = k2 % cols, k2 // cols
+                        for _, d in ipairs(DIRS) do
+                            local nx, ny = x + d[1], y + d[2]
+                            if nx >= 0 and ny >= 0 then
+                                local nk = ny * cols + nx
+                                local corner = (d[1] == 0 or d[2] == 0) or (isWalkCell(x + d[1], y) and isWalkCell(x, y + d[2]))
+                                if corner and near[nk] and label[nk] == nil and isWalkCell(nx, ny) then label[nk] = ncomp; stack[#stack + 1] = nk end
+                            end
+                        end
+                    end
+                else
+                    label[key] = 0
+                end
+            end
+        end
+        local function compOf(p) return label[math.floor(p[2] / GRID) * cols + math.floor(p[1] / GRID)] end
+        local cn = {}
+        for i = 1, n do
+            if A[i] then local l = compOf(A[i]); if l and l > 0 then cn[l] = (cn[l] or 0) + 1 end end
+        end
+        -- seed: the guide hint (map %), else the densest node (a hot spot of >= 6 nodes within 120 yd is preferred)
+        local seedNode
+        if seedPct and not seedRank then
+            local hp = { seedPct[1] * W / 100, seedPct[2] * H / 100 }
+            local bd = math.huge
+            for i = 1, n do
+                if A[i] then
+                    local d = dist(A[i], hp)
+                    if d < bd then bd, seedNode = d, i end
+                end
+            end
+            if bd > 800 then seedNode = nil end
+        end
+        if not seedNode then
+            local scored = {}
+            for i = 1, n do
+                if A[i] then
+                    local c120, c250 = 0, 0
+                    for j = 1, n do
+                        if j ~= i then
+                            local d = dist(Q[i], Q[j])
+                            if d <= 250 then c250 = c250 + 1; if d <= 120 then c120 = c120 + 1 end end
+                        end
+                    end
+                    scored[#scored + 1] = { i, c250 + ((c120 + 1 >= 6) and 1000 or 0) }
+                end
+            end
+            table.sort(scored, function(x, y) if x[2] ~= y[2] then return x[2] > y[2] end return x[1] < y[1] end)
+            local picks = {}
+            for _, sc in ipairs(scored) do
+                local ok = true
+                for _, pi in ipairs(picks) do if dist(Q[sc[1]], Q[pi]) < 400 then ok = false; break end end
+                if ok then
+                    picks[#picks + 1] = sc[1]
+                    if #picks >= (seedRank or 1) then break end
+                end
+            end
+            seedNode = picks[seedRank or 1]
+        end
+        if not seedNode then lastDiag = "no node with a walkable anchor"; return nil end
+        local bestComp = compOf(A[seedNode])
+        if not bestComp or bestComp == 0 then lastDiag = "seed node is not on a walkable component"; return nil end
+        local cand = {}
+        for i = 1, n do if A[i] and compOf(A[i]) == bestComp then cand[#cand + 1] = i end end
+        compRank = { { bestComp, #cand } }
+        -- compact region: grow nearest-first from the seed until the estimated loop would pass LOOP_MAX
+        local inRegion, sel = { [seedNode] = true }, { seedNode }
+        local verts, estLen = { seedNode }, 0
+        local dmin = {}
+        for _, j in ipairs(cand) do if j ~= seedNode then dmin[j] = dist(A[j], A[seedNode]) end end
+        while #sel < MAXNODES do
+            local pick, pd
+            for _, j in ipairs(cand) do
+                if not inRegion[j] and (not pd or dmin[j] < pd) then pick, pd = j, dmin[j] end
+            end
+            if not pick then break end
+            local nearVertex = false
+            for _, v in ipairs(verts) do if dist(A[v], A[pick]) <= 100 then nearVertex = true; break end end
+            local extra, at = 0, nil
+            if not nearVertex then
+                if #verts == 1 then extra, at = 2 * dist(A[verts[1]], A[pick]), 1
+                else
+                    extra = math.huge
+                    for q = 1, #verts do
+                        local a, b = A[verts[q]], A[verts[q % #verts + 1]]
+                        local dlt = dist(a, A[pick]) + dist(A[pick], b) - dist(a, b)
+                        if dlt < extra then extra, at = dlt, q end
+                    end
+                end
+            end
+            if estLen + extra > LOOP_MAX and #sel >= MIN_COMPACT then break end
+            inRegion[pick] = true; sel[#sel + 1] = pick
+            if at then table.insert(verts, at + 1, pick); estLen = estLen + extra end
+            for _, j in ipairs(cand) do
+                if not inRegion[j] then
+                    local d = dist(A[j], A[pick])
+                    if d < dmin[j] then dmin[j] = d end
+                end
+            end
+        end
+        if (rank or 1) == 1 then firstCand = sel end
+        local S0 = setCover(sel)
+        if #S0 < 2 then lastDiag = "fewer than 2 stops can cover the region"; return nil end
+
+        -- grid pathfinding: Dijkstra over 8-connected walkable cells from every stop
+        local function keyOf(p) return math.floor(p[2] / GRID) * cols + math.floor(p[1] / GRID) end
         local DD0, PV0 = {}, {}
         for a = 1, #S0 do DD0[a], PV0[a] = dijkstra(keyOf(S0[a])) end
         -- keep the largest group of stops that reach each other
@@ -1059,7 +1108,7 @@ local function buildRoute(pts, W, H, circles, uiMap)
             S, DD, PV = S2, DD2, PV2
         end
         local ns_ = #S
-        if ns_ < 2 then return nil end
+        if ns_ < 2 then lastDiag = "stops are not reachable from each other over walkable ground"; return nil end
         local C = {}
         for a = 1, ns_ do
             C[a] = {}
@@ -1257,25 +1306,26 @@ local function buildRoute(pts, W, H, circles, uiMap)
             end
         end
         if ncomp == 0 then return nil end
-        local compNodes = {}
-        for i = 1, n do
-            if A[i] then
-                local l = label[math.floor(A[i][2] / GRID) * cols + math.floor(A[i][1] / GRID)]
-                if l and l > 0 then compNodes[l] = (compNodes[l] or 0) + 1 end
-            end
-        end
-        local bestC, bestN = nil, 0
-        for l, c in pairs(compNodes) do if c > bestN then bestC, bestN = l, c end end
-        if not bestC then return nil end
+        local seedI = firstCand and firstCand[1]
+        if not seedI or not A[seedI] then return nil end
+        local bestC = label[math.floor(A[seedI][2] / GRID) * cols + math.floor(A[seedI][1] / GRID)]
+        if not bestC or bestC == 0 then return nil end
         local idx = {}
-        for i = 1, n do
-            if A[i] then
-                local l = label[math.floor(A[i][2] / GRID) * cols + math.floor(A[i][1] / GRID)]
-                if l == bestC then idx[#idx + 1] = i end
+        for _, i in ipairs(firstCand) do
+            if A[i] and label[math.floor(A[i][2] / GRID) * cols + math.floor(A[i][1] / GRID)] == bestC then idx[#idx + 1] = i end
+        end
+        local nearC = {}
+        do
+            local rc = math.ceil(EDGE_RADIUS / GRID)
+            for _, i in ipairs(idx) do
+                local cx, cy = math.floor(Q[i][1] / GRID), math.floor(Q[i][2] / GRID)
+                for dy = -rc, rc do for dx = -rc, rc do
+                    if dx * dx + dy * dy <= rc * rc and cx + dx >= 0 and cy + dy >= 0 then nearC[(cy + dy) * cols + cx + dx] = true end
+                end end
             end
         end
         local Cset = {}
-        for key, l in pairs(label) do if l == bestC then Cset[key] = true end end
+        for key, l in pairs(label) do if l == bestC and nearC[key] then Cset[key] = true end end
         -- erode by 40 yd (2 cells), then 1 cell, then 0 if nothing is left; keep the largest 8-connected part
         local E
         for _, rad in ipairs { 2, 1, 0 } do
@@ -1543,27 +1593,402 @@ local function buildRoute(pts, W, H, circles, uiMap)
         return { poly = poly, idx = idx, stops = #poly, preLen = 0, postLen = 0, preStops = 0, covered = 0, region = #idx, stopsY = poly }
     end
 
+    ------------------------------------------------------------ shared helpers for the sweep and lap methods
+    local function keyP(p) return math.floor(p[2] / GRID) * cols + math.floor(p[1] / GRID) end
+    local function cornerCutValid(pl, ok)
+        local k = #pl
+        if k < 3 then return pl end
+        local out = {}
+        for i = 1, k do
+            local v, p, q = pl[i], pl[(i - 2) % k + 1], pl[i % k + 1]
+            local c1 = { v[1] + 0.25 * (p[1] - v[1]), v[2] + 0.25 * (p[2] - v[2]) }
+            local c2 = { v[1] + 0.25 * (q[1] - v[1]), v[2] + 0.25 * (q[2] - v[2]) }
+            if ok(c1, c2) and ok(c1, p) and ok(c2, q) then out[#out + 1] = c1; out[#out + 1] = c2 else out[#out + 1] = v end
+        end
+        return out
+    end
+    local function cellPathFrom(prv, a, b)
+        local path = {}
+        local k, ka = keyP(b), keyP(a)
+        while k and k ~= ka do
+            table.insert(path, 1, { ((k % cols) + 0.5) * GRID, ((k // cols) + 0.5) * GRID })
+            k = prv[k]
+        end
+        table.insert(path, 1, a)
+        path[#path] = b
+        return path
+    end
+    local function pullPath(path, cap)
+        local out = { path[1] }
+        local anchor = 1
+        while anchor < #path do
+            local far = anchor + 1
+            for j = anchor + 2, #path do
+                if dist(path[anchor], path[j]) > cap then break end
+                if segOK(path[anchor], path[j]) then far = j else break end
+            end
+            out[#out + 1] = path[far]; anchor = far
+        end
+        return out
+    end
+    local function mooreTrace(inE, sx, sy)
+        local bnd = { { sx, sy } }
+        local cx, cy, bd = sx, sy, 7
+        local fx, fy
+        for _ = 1, 400000 do
+            local found
+            for k = 1, 8 do
+                local d = ((bd - 1 + k) % 8) + 1
+                local nx, ny = cx + DIRS[d][1], cy + DIRS[d][2]
+                if inE(nx, ny) then
+                    local dp = ((bd - 1 + k - 1) % 8) + 1
+                    found = { nx, ny, cx + DIRS[dp][1] - nx, cy + DIRS[dp][2] - ny }
+                    break
+                end
+            end
+            if not found then break end
+            if cx == sx and cy == sy and fx and found[1] == fx and found[2] == fy then break end
+            if not fx then fx, fy = found[1], found[2] end
+            cx, cy = found[1], found[2]
+            for d = 1, 8 do if DIRS[d][1] == found[3] and DIRS[d][2] == found[4] then bd = d end end
+            bnd[#bnd + 1] = { cx, cy }
+        end
+        if #bnd > 1 and bnd[#bnd][1] == sx and bnd[#bnd][2] == sy then bnd[#bnd] = nil end
+        return bnd
+    end
+    local allIdx0 = {}
+    for i = 1, n do allIdx0[i] = i end
+
+    ------------------------------------------------------------ method c: sweep along an elongated region
+    local near200
+    local function sweepMethod()
+        local idxS = (uiMap == 1441) and allIdx0 or firstCand
+        if not idxS then return nil end
+        local Qo = Q
+        local Q, n = {}, #idxS
+        for k, i in ipairs(idxS) do Q[k] = Qo[i] end
+        if n < 25 then return nil end
+        local mx, my = 0, 0
+        for _, p in ipairs(Q) do mx = mx + p[1]; my = my + p[2] end
+        mx, my = mx / n, my / n
+        local sxx, syy, sxy = 0, 0, 0
+        for _, p in ipairs(Q) do
+            local dx, dy = p[1] - mx, p[2] - my
+            sxx = sxx + dx * dx; syy = syy + dy * dy; sxy = sxy + dx * dy
+        end
+        local tr, det = sxx + syy, sxx * syy - sxy * sxy
+        local disc = math.sqrt(math.max(0, tr * tr / 4 - det))
+        local l1, l2 = tr / 2 + disc, math.max(tr / 2 - disc, 1e-9)
+        local ratio = math.sqrt(l1 / l2)
+        if ratio < SWEEP_RATIO and uiMap ~= 1441 then return nil end
+        local th = 0.5 * math.atan(2 * sxy, sxx - syy)
+        local ux, uy = math.cos(th), math.sin(th)
+        local order, tproj = {}, {}
+        for i = 1, n do order[i] = i; tproj[i] = (Q[i][1] - mx) * ux + (Q[i][2] - my) * uy end
+        table.sort(order, function(a, b) return tproj[a] < tproj[b] end)
+        local axis = {}
+        for k = 1, 15 do
+            local lo, hi = math.floor((k - 1) * n / 15) + 1, math.floor(k * n / 15)
+            if hi < lo then hi = lo end
+            local xs, ys = {}, {}
+            for q = lo, hi do xs[#xs + 1] = Q[order[q]][1]; ys[#ys + 1] = Q[order[q]][2] end
+            table.sort(xs); table.sort(ys)
+            axis[#axis + 1] = { xs[(#xs + 1) // 2], ys[(#ys + 1) // 2] }
+        end
+        local cum, L = { 0 }, 0
+        for k = 2, #axis do L = L + dist(axis[k - 1], axis[k]); cum[k] = L end
+        if L < 400 then return nil end
+        local function project(pt)
+            local bestD, bs, bp = math.huge, 0, 0
+            for k = 1, #axis - 1 do
+                local a, b = axis[k], axis[k + 1]
+                local dx, dy = b[1] - a[1], b[2] - a[2]
+                local l2s = dx * dx + dy * dy
+                if l2s > 0 then
+                    local t = math.max(0, math.min(1, ((pt[1] - a[1]) * dx + (pt[2] - a[2]) * dy) / l2s))
+                    local cx, cy = a[1] + t * dx, a[2] + t * dy
+                    local d = math.sqrt((pt[1] - cx) ^ 2 + (pt[2] - cy) ^ 2)
+                    if d < bestD then
+                        bestD = d
+                        local len = math.sqrt(l2s)
+                        bs = cum[k] + t * len
+                        bp = (pt[1] - cx) * (-dy / len) + (pt[2] - cy) * (dx / len)
+                    end
+                end
+            end
+            return bs, bp
+        end
+        local function atS(s, p)
+            local k = 1
+            while k < #axis - 1 and cum[k + 1] < s do k = k + 1 end
+            local a, b = axis[k], axis[k + 1]
+            local len = math.max(dist(a, b), 1e-6)
+            local t = math.max(0, math.min(1, (s - cum[k]) / len))
+            local dx, dy = (b[1] - a[1]) / len, (b[2] - a[2]) / len
+            return { a[1] + (b[1] - a[1]) * t - dy * p, a[2] + (b[2] - a[2]) * t + dx * p }
+        end
+        local nbins = math.max(8, math.floor(1 / SWEEP_BIN + 0.5))
+        local bins = {}
+        for i = 1, n do
+            local s, p = project(Q[i])
+            local b = math.min(nbins, math.floor(s / L * nbins) + 1)
+            bins[b] = bins[b] or {}
+            table.insert(bins[b], p)
+        end
+        local SA, SB = {}, {}
+        for b = 1, nbins do
+            local ps = bins[b]
+            if ps and #ps >= 3 then
+                table.sort(ps)
+                local lo = ps[math.max(1, math.floor(#ps * 0.10 + 0.5))]
+                local hi = ps[math.min(#ps, math.max(1, math.floor(#ps * 0.90 + 0.5)))]
+                local cen = (lo + hi) / 2
+                local s = (b - 0.5) / nbins * L
+                SA[#SA + 1] = atS(s, math.min(lo + SWEEP_INSET, cen))
+                SB[#SB + 1] = atS(s, math.max(hi - SWEEP_INSET, cen))
+            end
+        end
+        if #SA < 4 then return nil end
+        local raw = {}
+        for _, p in ipairs(SA) do raw[#raw + 1] = p end
+        for k = #SB, 1, -1 do raw[#raw + 1] = SB[k] end
+        -- validity: avoid circles/flagged walls, no long water crossing, stay within 200 yd of nodes; no slope test
+        if not near200 then
+            near200 = {}
+            local rc = math.ceil(SWEEP_CORRIDOR / GRID)
+            for _, p in ipairs(Q) do
+                local cx, cy = math.floor(p[1] / GRID), math.floor(p[2] / GRID)
+                for dy = -rc, rc do
+                    for dx = -rc, rc do
+                        if dx * dx + dy * dy <= rc * rc and cx + dx >= 0 and cy + dy >= 0 then near200[(cy + dy) * cols + cx + dx] = true end
+                    end
+                end
+            end
+        end
+        local wi = useT and waterInfo(uiMap) or nil
+        local function sweepOK(a, b)
+            for _, c in ipairs(circles or {}) do
+                if segDist(c, a, b) < c.r then return false end
+            end
+            local d = dist(a, b)
+            local k = math.max(1, math.ceil(d / GRID))
+            local step, wrun = d / k, 0
+            for s = 0, k do
+                local t = s / k
+                local x, y = a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t
+                if x < 0 or y < 0 then return false end
+                local key = math.floor(y / GRID) * cols + math.floor(x / GRID)
+                if not near200[key] then return false end
+                if wi and wi.wet[key] then
+                    wrun = wrun + math.max(step, 1)
+                    if wrun >= SPIKE_YD then return false end
+                else wrun = 0 end
+            end
+            return true
+        end
+        local function nearestNode(mid)
+            local bd, bp = math.huge, nil
+            for _, q in ipairs(Q) do
+                local d = dist(mid, q)
+                if d < bd then bd, bp = d, q end
+            end
+            return bp
+        end
+        local out = {}
+        for _, p in ipairs(raw) do
+            if #out == 0 then out[1] = p
+            else
+                local last = out[#out]
+                if sweepOK(last, p) then out[#out + 1] = p
+                else
+                    local nn = nearestNode({ (last[1] + p[1]) / 2, (last[2] + p[2]) / 2 })
+                    if nn and sweepOK(last, nn) and sweepOK(nn, p) then out[#out + 1] = nn; out[#out + 1] = p end
+                end
+            end
+        end
+        if #out < 6 then return nil end
+        out = cornerCutValid(out, sweepOK)
+        return { poly = out, idx = idxS, stops = #out, preLen = 0, postLen = 0, preStops = 0, covered = 0, region = n, stopsY = out, ratio = ratio }
+    end
+
+    ------------------------------------------------------------ method d: lap around a compact valley (concave hull, offset inward)
+    local function lapMethod()
+        local reg = firstCand
+        if not reg or #reg < 15 then return nil end
+        local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+        for _, i in ipairs(reg) do
+            local p = Q[i]
+            if p[1] < x0 then x0 = p[1] end; if p[1] > x1 then x1 = p[1] end
+            if p[2] < y0 then y0 = p[2] end; if p[2] > y1 then y1 = p[2] end
+        end
+        local pad = math.ceil((LAP_GAP + LAP_INSET + 100) / GRID) + 2
+        local gx0, gy0 = math.floor(x0 / GRID) - pad, math.floor(y0 / GRID) - pad
+        local gw, gh = math.floor(x1 / GRID) + pad - gx0 + 1, math.floor(y1 / GRID) + pad - gy0 + 1
+        local function dt(src)
+            local d = {}
+            local INF = 1e9
+            for i = 1, gw * gh do d[i] = src[i] and 0 or INF end
+            for y = 0, gh - 1 do
+                for x = 0, gw - 1 do
+                    local i = y * gw + x + 1
+                    local v = d[i]
+                    if x > 0 and d[i - 1] + 1 < v then v = d[i - 1] + 1 end
+                    if y > 0 then
+                        if d[i - gw] + 1 < v then v = d[i - gw] + 1 end
+                        if x > 0 and d[i - gw - 1] + 1.4142 < v then v = d[i - gw - 1] + 1.4142 end
+                        if x < gw - 1 and d[i - gw + 1] + 1.4142 < v then v = d[i - gw + 1] + 1.4142 end
+                    end
+                    d[i] = v
+                end
+            end
+            for y = gh - 1, 0, -1 do
+                for x = gw - 1, 0, -1 do
+                    local i = y * gw + x + 1
+                    local v = d[i]
+                    if x < gw - 1 and d[i + 1] + 1 < v then v = d[i + 1] + 1 end
+                    if y < gh - 1 then
+                        if d[i + gw] + 1 < v then v = d[i + gw] + 1 end
+                        if x < gw - 1 and d[i + gw + 1] + 1.4142 < v then v = d[i + gw + 1] + 1.4142 end
+                        if x > 0 and d[i + gw - 1] + 1.4142 < v then v = d[i + gw - 1] + 1.4142 end
+                    end
+                    d[i] = v
+                end
+            end
+            return d
+        end
+        local src = {}
+        for _, i in ipairs(reg) do
+            local cx, cy = math.floor(Q[i][1] / GRID) - gx0, math.floor(Q[i][2] / GRID) - gy0
+            src[cy * gw + cx + 1] = true
+        end
+        local d1 = dt(src)
+        local outside = {}
+        for k = 1, gw * gh do if d1[k] * GRID > LAP_GAP then outside[k] = true end end
+        local d2 = dt(outside)
+        local inner, cntI = {}, 0
+        for k = 1, gw * gh do
+            if d2[k] * GRID > LAP_GAP + LAP_INSET then inner[k] = true; cntI = cntI + 1 end
+        end
+        if cntI < 30 then return nil end
+        -- largest 8-connected part, then its outer boundary
+        local lab, bestMembers = {}, nil
+        for k in pairs(inner) do
+            if not lab[k] then
+                local stack, members = { k }, {}
+                lab[k] = true
+                while #stack > 0 do
+                    local u = table.remove(stack); members[#members + 1] = u
+                    local x, y = (u - 1) % gw, (u - 1) // gw
+                    for _, d in ipairs(DIRS) do
+                        local nx, ny = x + d[1], y + d[2]
+                        if nx >= 0 and ny >= 0 and nx < gw and ny < gh then
+                            local nk = ny * gw + nx + 1
+                            if inner[nk] and not lab[nk] then lab[nk] = true; stack[#stack + 1] = nk end
+                        end
+                    end
+                end
+                if not bestMembers or #members > #bestMembers then bestMembers = members end
+            end
+        end
+        if not bestMembers or #bestMembers < 30 then return nil end
+        local E = {}
+        for _, u in ipairs(bestMembers) do E[u] = true end
+        local sx, sy
+        for u in pairs(E) do
+            local x, y = (u - 1) % gw, (u - 1) // gw
+            if not sy or y < sy or (y == sy and x < sx) then sx, sy = x, y end
+        end
+        local bnd = mooreTrace(function(x, y) return x >= 0 and y >= 0 and x < gw and y < gh and E[y * gw + x + 1] == true end, sx, sy)
+        local poly = {}
+        for _, c in ipairs(bnd) do poly[#poly + 1] = { (gx0 + c[1] + 0.5) * GRID, (gy0 + c[2] + 0.5) * GRID } end
+        if #poly < 8 then return nil end
+        poly = simplifyValid(poly, LAP_DP, function() return true end)
+        -- snap vertices to walkable ground, repair failing segments with grid paths
+        local pts = {}
+        for _, v in ipairs(poly) do
+            local sp = nil
+            if isWalkP(v[1], v[2]) then sp = v
+            else
+                local cx, cy = math.floor(v[1] / GRID), math.floor(v[2] / GRID)
+                local bd = math.huge
+                for dy = -6, 6 do for dx = -6, 6 do
+                    if isWalkCell(cx + dx, cy + dy) then
+                        local p = { (cx + dx + 0.5) * GRID, (cy + dy + 0.5) * GRID }
+                        local d = dist(p, v)
+                        if d < bd then bd, sp = d, p end
+                    end
+                end end
+            end
+            if sp then pts[#pts + 1] = sp end
+        end
+        if #pts < 6 then return nil end
+        local res, repairs = { pts[1] }, 0
+        for i = 2, #pts + 1 do
+            local a = res[#res]
+            local b = pts[i] or pts[1]
+            local last = (i == #pts + 1)
+            if dist(a, b) >= 1 then
+                if segOK(a, b) then
+                    if not last then res[#res + 1] = b end
+                elseif repairs < LAP_MAX_REPAIRS then
+                    local dd, prv = dijkstra(keyP(a))
+                    if dd[keyP(b)] then
+                        repairs = repairs + 1
+                        local pulled = pullPath(cellPathFrom(prv, a, b), PATH_CAP)
+                        for q = 2, #pulled - (last and 1 or 0) do res[#res + 1] = pulled[q] end
+                    end
+                end
+            end
+        end
+        if #res < 6 then return nil end
+        res = cornerCutValid(res, segOK)
+        return { poly = res, idx = reg, stops = #res, preLen = 0, postLen = 0, preStops = 0, covered = 0, region = #reg, stopsY = res, repairs = repairs }
+    end
+
     ------------------------------------------------------------ choose
     local tour = tourMethod()
     local edge = edgeMethod()
+    local sweep = sweepMethod()
+    local lap = lapMethod()
     local cands = {}
-    for name, c in pairs { tour = tour, edge = edge } do
+    for name, c in pairs { tour = tour, edge = edge, sweep = sweep, lap = lap } do
         if c then
             c.method = name
             c.len = polyLen(c.poly, true)
             c.cov = covCount(c.poly, c.idx)
             c.frac = c.cov / math.max(1, #c.idx)
             c.ypn = c.len / math.max(1, c.cov)
+            local mt = metrics(c.poly)
+            c.cross, c.ovl = mt.crossings, mt.overlap
             cands[#cands + 1] = c
         end
     end
-    if #cands == 0 then return nil end
+    if #cands == 0 then lastDiag = lastDiag ~= "" and lastDiag or "no method produced a loop"; return nil end
+    -- fewer crossings, then lower overlap, then yards per covered node; a method that covers < 60% of its region loses unless all do
     table.sort(cands, function(a, b)
-        local ea, eb = a.frac >= MIN_EDGE_COVER, b.frac >= MIN_EDGE_COVER
+        local ea = a.frac >= MIN_EDGE_COVER and (a.ovl <= 0.5 or uiMap == 1441) -- out-and-back shapes (overlap > 0.5) only win if all do
+        local eb = b.frac >= MIN_EDGE_COVER and (b.ovl <= 0.5 or uiMap == 1441)
         if ea ~= eb then return ea end
-        if ea then return a.ypn < b.ypn end
-        return a.frac > b.frac
+        if not ea then
+            if a.frac ~= b.frac then return a.frac > b.frac end
+            return a.method < b.method
+        end
+        if a.cross ~= b.cross then return a.cross < b.cross end
+        local oa, ob = math.floor(a.ovl * 100 + 0.5), math.floor(b.ovl * 100 + 0.5)
+        if oa ~= ob then return oa < ob end
+        if math.floor(a.ypn) ~= math.floor(b.ypn) then return a.ypn < b.ypn end
+        return a.method < b.method
     end)
+    if uiMap == 1441 then
+        for i, c in ipairs(cands) do
+            if c.method == "sweep" and c.frac >= MIN_EDGE_COVER then table.remove(cands, i); table.insert(cands, 1, c); break end
+        end
+    end
+    local methodsStr = {}
+    for _, c in ipairs(cands) do
+        methodsStr[#methodsStr + 1] = string.format("%s len=%.0f cov=%d/%d cross=%d ov=%.2f ypn=%.0f", c.method, c.len, c.cov, #c.idx, c.cross, c.ovl, c.ypn)
+    end
+    local methodsAlt = table.concat(methodsStr, " | ")
     local function finish(win, altStr)
     local final = win.poly
     local allIdx = {}
@@ -1583,15 +2008,67 @@ local function buildRoute(pts, W, H, circles, uiMap)
         local ls = useT and terrain.localSlope(uiMap, up[1], up[2], 30, W, H)
         usable[#usable + 1] = string.format("(%.1f,%.1f) cell=%d slope=%s route=%dyd", up[1], up[2], cellState(math.floor(py[1] / GRID), math.floor(py[2] / GRID)), ls and string.format("%.2f", ls) or "n/a", math.floor(best + 0.5))
     end
-    return { longPieces = win.longPieces or 0, usable = table.concat(usable, "; "), flat = flat, D = D, stops = win.stops, share = covAll / n, open = false, maxhop = met.maxseg,
+    return { memberIdx = win.idx, longPieces = win.longPieces or 0, usable = table.concat(usable, "; "), flat = flat, D = D, stops = win.stops, share = covAll / n, open = false, maxhop = met.maxseg,
         preLen = win.preLen, postLen = win.postLen, preCov = win.region, postCov = win.covered, preStops = win.preStops, region = win.region,
         len = met.len, pts = #final, crossings = met.crossings, overlap = met.overlap, stopsY = win.stopsY, polyY = final,
         method = win.method, maxslope = polyMaxSlope(final, W, H, uiMap),
         alt = altStr }
     end
-    local res = finish(cands[1], (cands[2] and string.format("%s len=%.0f cov=%d/%d ypn=%.0f", cands[2].method, cands[2].len, cands[2].cov, #cands[2].idx, cands[2].ypn)) or "")
+    -- hot spots: dense clusters (>= HOTSPOT_MIN nodes within 150 yd) that the chosen loop does not reach get a small extra loop
+    local function hotspots(res0)
+        local out = {}
+        local loop = res0.polyY
+        local unc = {}
+        for i = 1, n do
+            local best = math.huge
+            for k = 1, #loop do best = math.min(best, segDist(Q[i], loop[k], loop[k % #loop + 1])) end
+            if best > R + 40 then unc[#unc + 1] = i end
+        end
+        local used = {}
+        for _ = 1, HOTSPOT_MAX do
+            local bestN, bestMembers = 0, nil
+            for _, i in ipairs(unc) do
+                if not used[i] then
+                    local members = {}
+                    for _, j in ipairs(unc) do
+                        if not used[j] and dist(Q[i], Q[j]) <= 150 then members[#members + 1] = j end
+                    end
+                    if #members > bestN then bestN, bestMembers = #members, members end
+                end
+            end
+            if not bestMembers or bestN < HOTSPOT_MIN then break end
+            local cx, cy = 0, 0
+            for _, j in ipairs(bestMembers) do cx = cx + Q[j][1]; cy = cy + Q[j][2] end
+            cx, cy = cx / #bestMembers, cy / #bestMembers
+            local centre = { cx, cy }
+            if not isWalkP(cx, cy) then
+                local bd, bp = math.huge, nil
+                for _, j in ipairs(bestMembers) do
+                    if A[j] and dist(A[j], centre) < bd then bd, bp = dist(A[j], centre), A[j] end
+                end
+                centre = bp
+            end
+            for _, j in ipairs(bestMembers) do used[j] = true end
+            if centre then
+                local circle, clean = {}, true
+                for k = 0, 11 do
+                    local ang = k / 12 * 2 * math.pi
+                    local p = { centre[1] + HOTSPOT_RADIUS * math.cos(ang), centre[2] + HOTSPOT_RADIUS * math.sin(ang) }
+                    if inCircles(circles, p) then clean = false end
+                    circle[#circle + 1] = p
+                end
+                if clean then
+                local h = finish({ poly = circle, idx = bestMembers, stops = #circle, method = "hotspot", preLen = 0, postLen = 0, preStops = 0, covered = 0, region = #bestMembers, stopsY = circle }, "hot spot")
+                h.hotspot = true
+                out[#out + 1] = h
+                end
+            end
+        end
+        return out
+    end
+    local res = finish(cands[1], methodsAlt)
     -- a second walkable component with at least 40% as many nodes gets its own loop
-    if tour and compRank and compRank[2] and compRank[2][2] >= 0.4 * compRank[1][2] then
+    if false and tour and compRank and compRank[2] and compRank[2][2] >= 0.4 * compRank[1][2] then
         local t2 = tourMethod(2)
         if t2 then
             t2.method = "tour"
@@ -1603,7 +2080,7 @@ local function buildRoute(pts, W, H, circles, uiMap)
     end
     -- tangled? rebuild with harsher pruning and/or split a long corridor into two loops; keep the version with fewest crossings
     local function ypnOf(r) return r.len / math.max(1, r.share * n) end
-    if tour and (res.crossings > 3 or res.overlap > 0.3) then
+    if tour and res.method == "tour" and (res.crossings > 3 or res.overlap > 0.3) then
         local orig = res
         local limit = 1.3 * ypnOf(orig)
         local before = string.format("len=%d share=%.2f cross=%d overlap=%.2f", math.floor(orig.len + 0.5), orig.share, orig.crossings, orig.overlap)
@@ -1637,6 +2114,11 @@ local function buildRoute(pts, W, H, circles, uiMap)
             if bestRes.splitPartner then bestRes.splitPartner.second = tailSecond else bestRes.second = tailSecond end
             res = bestRes
         end
+    end
+    do
+        local tail = res
+        while tail.second do tail = tail.second end
+        for _, h in ipairs(hotspots(res)) do tail.second = h; tail = h end
     end
     res.compNodes = compRank and compRank[1] and compRank[1][2] or 0
     res.compCount = compRank and #compRank or 0
@@ -1719,6 +2201,11 @@ if os.getenv("PROFPATH_WATERTEST") then
 end
 
 ---------------------------------------------------------------- Build
+local routeHints = {}
+do
+    local fh = io.open(ROOT .. "/tools/data/route-hints.json", "rb")
+    if fh then routeHints = parse_json((fh:read("a"):gsub("^\239\187\191", ""))); fh:close() end
+end
 local overrides = {}
 do
     local fh = io.open(ROOT .. "/tools/data/route-overrides.json", "rb")
@@ -1825,10 +2312,12 @@ local nroutes, nopen, globalMax = 0, 0, 0
 local metricRows = {}
 local flagRows, slopeViol, methodCount = {}, {}, {}
 local totalLong = 0
+local detailRows = {}
+local retryRows = {}
 local touchedRows = {}
 local function checkScore(r)
     local slopeTerm = 0
-    if r.maxslope then slopeTerm = r.maxslope >= STEEP_PASS and 5 or 0 elseif r.maxhop > 300 then slopeTerm = 2 end
+    if r.maxslope then slopeTerm = (r.maxslope >= STEEP_PASS and r.method ~= "sweep") and 5 or 0 elseif r.maxhop > 300 then slopeTerm = 2 end
     return r.crossings * 3 + r.overlap * 10 + slopeTerm + (r.share < 0.3 and 1 or 0)
 end
 local reviewRoutes = {}
@@ -1858,13 +2347,16 @@ local function pickZones(prof, band)
     local cap = MAXZONES
     if starter then cap = #guideList end -- keep every starter zone so both factions are covered
     for _, a in ipairs(guideList) do add(a, true); list[#list + 1] = cand[#cand] end
-    for _, name in ipairs(extra) do -- zones from the published guide: candidates after the Wowhead picks, before the node-count picks
+    for _, name0 in ipairs(extra) do -- zones from the published guide: candidates after the Wowhead picks, before the node-count picks
+        local isG = name0:sub(-1) == "!"
+        local name = isG and name0:sub(1, -2) or name0
         local a = areaOf(name)
         if a and not seen[a] then
-            add(a, false); list[#list + 1] = cand[#cand]
+            add(a, isG); list[#list + 1] = cand[#cand]
             if gathering then print(string.format("guide zone %s %d-%d: %d useful nodes after exclusions (%d town, %d avoid)", name, from, to, cand[#cand].nodes, cand[#cand].et or 0, cand[#cand].ea or 0)) end
         end
     end
+    cap = math.max(cap, #list)
     if gathering then
         local others = {}
         for area in pairs(zones) do
@@ -1903,14 +2395,45 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
         local line = { string.format("%s %d-%d:", prof, from, to) }
         for zi, c in ipairs(list) do
             local z = zones[c.area]
-            if SKILL[prof] then
+            local only = os.getenv("PROFPATH_ONLY")
+            if only and not z.name:find(only) then -- debugging filter: skip other zones
+            elseif SKILL[prof] then
                 local sz = assert(size[z.map], 'no yard size for uiMap ' .. z.map)
                 local circ = {}
                 for _, cc in ipairs(zoneCircles(c.area).all) do circ[#circ + 1] = cc end
                 for _, fp in ipairs(FLAGGED[z.map] or {}) do -- verified impassable points: hard 70 yd keep-out
                     circ[#circ + 1] = { fp[1] * sz[1] / 100, fp[2] * sz[2] / 100, r = FLAG_KEEPOUT }
                 end
-                local r0 = buildRoute(c.pts, sz[1], sz[2], circ, z.map)
+                local seedPct
+                do
+                    for key, pos in pairs(routeHints) do
+                        local kind, a, b, ar = key:match("^(%a+):(%d+)-(%d+):(%d+)$")
+                        if kind == prof and tonumber(ar) == c.area and tonumber(a) >= from and tonumber(a) < to then seedPct = pos end
+                    end
+                end
+                local r0 = buildRoute(c.pts, sz[1], sz[2], circ, z.map, seedPct)
+                do
+                    local function coveredOf(r) return r and math.floor(r.share * #c.pts + 0.5) or 0 end
+                    local why
+                    if not r0 then why = "hint/default seed gave no loop: " .. lastDiag
+                    elseif coveredOf(r0) < MIN_COMPACT then why = "loop covers only " .. coveredOf(r0) .. " nodes"
+                    elseif r0.crossings > 3 then why = r0.crossings .. " crossings" end
+                    if why then
+                        local best = (r0 and coveredOf(r0) >= MIN_COMPACT) and r0 or nil
+                        local usedRank
+                        for rank = 1, 3 do
+                            local alt = buildRoute(c.pts, sz[1], sz[2], circ, z.map, nil, rank)
+                            if alt and coveredOf(alt) >= MIN_COMPACT then
+                                if not best or alt.crossings < best.crossings or (alt.crossings == best.crossings and alt.overlap < best.overlap - 1e-9) then
+                                    best, usedRank = alt, rank
+                                end
+                            end
+                        end
+                        retryRows[#retryRows + 1] = string.format("%s %s %d-%d: %s -> %s", prof, z.name, from, to, why,
+                            usedRank and string.format("used density seed #%d (len %d, %d nodes, %d crossings)", usedRank, math.floor(best.len + 0.5), coveredOf(best), best.crossings) or "kept the original")
+                        if usedRank or not r0 then r0 = best or r0 end
+                    end
+                end
                 local variants = {}
                 do local rr = r0; while rr do variants[#variants + 1] = rr; rr = rr.second end end
                 local rFirst
@@ -1919,7 +2442,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                 if vi >= 2 then
                     local t = {}
                     for k, v in pairs(z) do t[k] = v end
-                    t.name = t.name .. " (" .. vi .. ")"
+                    t.name = t.name .. (variants[vi].hotspot and " (hot spot)" or (" (" .. vi .. ")"))
                     z = t
                 end
                 local r = variants[vi]
@@ -1928,7 +2451,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     local ov = overrides[string.format("%s:%d-%d:%d", prof, from, to, c.area)]
                     if ov and vi == 1 then r = applyOverride(gen, ov, c.pts, sz[1], sz[2], z.map) end
                 end
-                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "", vi >= 2 and (" variant = " .. vi .. ",") or "") .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
+                local rs = r and (string.format(" share = %.2f, stops = %d, len = %d,%s%s", r.share, r.stops, math.floor(r.len + 0.5), r.manual and " manual = true," or "", (vi >= 2 and (" variant = " .. vi .. ",") or "") .. (r.hotspot and " hotspot = true," or "")) .. (r.flat and (" route = { " .. table.concat(r.flat, ",") .. " }") or "")) or ""
                 out[#out + 1] = string.format('        { area = %d, map = %d, side = "%s", nodes = %d, guide = %s,%s },',
                     c.area, z.map, z.side, c.nodes, tostring(c.guide and true or false), rs)
                 if r then
@@ -1936,7 +2459,12 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     do
                         local W, H = sz[1], sz[2]
                         local nd, cov = {}, {}
-                        for ni, p in ipairs(c.pts) do
+                        local plist = c.pts
+                        if r.hotspot and r.memberIdx then
+                            plist = {}
+                            for _, mi in ipairs(r.memberIdx) do plist[#plist + 1] = c.pts[mi] end
+                        end
+                        for ni, p in ipairs(plist) do
                             nd[ni] = string.format("[%s,%s,%q]", r1(p[1]), r1(p[2]), p[3] or "")
                             local py = { p[1] * W / 100, p[2] * H / 100 }
                             local pl, best = r.polyY, math.huge
@@ -1954,6 +2482,9 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                     if r.maxhop > globalMax then globalMax = r.maxhop end
                     do
                         local gm = gen.method or "?"
+                        if (prof == "mining" and z.name:find("Mulgore") and from == 1) or z.name:find("Thousand Needles") then
+                            detailRows[#detailRows + 1] = string.format("%s %s %d-%d WINNER=%s: %s", prof, z.name, from, to, gm, gen.alt or "")
+                        end
                         if gen.rebuilt then
                             touchedRows[#touchedRows + 1] = string.format("%s %s %d-%d [%s]: before %s -> after len=%d share=%.2f cross=%d overlap=%.2f", prof, z.name, from, to, gen.rebuilt, gen.before or "(second part of a split)", math.floor(r.len + 0.5), r.share, r.crossings, r.overlap)
                         end
@@ -1966,7 +2497,7 @@ for _, prof in ipairs { "mining", "herbalism", "skinning", "fishing" } do
                             fl[#fl + 1] = string.format("(%.1f,%.1f)=%dyd", fp[1], fp[2], math.floor(best + 0.5))
                             if best <= 60 then flagRows[#flagRows + 1] = string.format("VIOLATION %s %s %d-%d near (%.1f,%.1f): %d yd%s", prof, z.name, from, to, fp[1], fp[2], math.floor(best + 0.5), r.manual and " [manual]" or "") end
                         end
-                        if r.maxslope and r.maxslope >= STEEP_PASS and not r.manual then slopeViol[#slopeViol + 1] = string.format("%s %s %d-%d slope=%.2f", prof, z.name, from, to, r.maxslope) end
+                        if r.maxslope and r.maxslope >= STEEP_PASS and not r.manual and gen.method ~= "sweep" then slopeViol[#slopeViol + 1] = string.format("%s %s %d-%d slope=%.2f", prof, z.name, from, to, r.maxslope) end
                         metricRows[#metricRows].text = metricRows[#metricRows].text .. string.format(" method=%s%s slope=%s flagged=%s alt=[%s] usable=[%s] longPieces=%d comps=%d first=%d", gm, r.manual and "(manual)" or "", r.maxslope and string.format("%.2f", r.maxslope) or "n/a", #fl > 0 and table.concat(fl, ";") or "-", gen.alt or "", gen.usable or "", gen.longPieces or 0, gen.compCount or 0, gen.compNodes or 0)
                         totalLong = totalLong + (gen.longPieces or 0)
                         if #fl > 0 then flagRows[#flagRows + 1] = string.format("%s %s %d-%d %s%s", prof, z.name, from, to, table.concat(fl, " "), r.manual and " [manual]" or "") end
@@ -2001,10 +2532,10 @@ do
     for _, e in ipairs(reviewRoutes) do
         local r = e.rec
         local check = checkScore(r)
-        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"excluded":[%d,%d],"method":"%s","maxslope":%s,"manual":%s,"note":%q,"route":[%s],"generated":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
+        parts[#parts + 1] = string.format('{"id":"%s","kind":"%s","from":%d,"to":%d,"area":%d,"map":%d,"zone":"%s","side":"%s","guide":%s,"len":%d,"share":%.2f,"stops":%d,"crossings":%d,"overlap":%.2f,"maxhop":%d,"check":%.1f,"D":%d,"R":%d,"yards":[%d,%d],"excluded":[%d,%d],"method":"%s","maxslope":%s,"hotspot":%s,"manual":%s,"note":%q,"route":[%s],"generated":[%s],"stopsXY":[%s],"nodes":[%s],"covered":[%s]}',
             e.id, e.prof, e.from, e.to, e.z.area, e.z.map, e.z.name, e.z.side, tostring(e.guide), math.floor(r.len + 0.5), r.share, r.stops,
             r.crossings, r.overlap, math.floor(r.maxhop + 0.5), check, r.D, R, math.floor(e.W + 0.5), math.floor(e.H + 0.5),
-            e.et, e.ea, r.manual and "manual" or (r.method or "tour"), r.maxslope and string.format("%.2f", r.maxslope) or "null", tostring(r.manual and true or false), r.note or "", table.concat(r.flat, ","), table.concat(e.gen.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
+            e.et, e.ea, r.manual and "manual" or (r.method or "tour"), r.maxslope and string.format("%.2f", r.maxslope) or "null", tostring(r.hotspot and true or false), tostring(r.manual and true or false), r.note or "", table.concat(r.flat, ","), table.concat(e.gen.flat, ","), table.concat(e.st, ","), table.concat(e.nd, ","), table.concat(e.cov, ","))
     end
     os.execute('mkdir "' .. (ROOT .. "/tools/review"):gsub("/", "\\") .. '" 2>nul')
     local rf = assert(io.open(ROOT .. "/tools/review/review.json", "wb"))
@@ -2027,6 +2558,8 @@ do
     for k, v in pairs(methodCount) do mc[#mc + 1] = k .. "=" .. v end
     table.sort(mc)
     print("routes touched by the tangle fix:" .. string.char(10) .. "  " .. table.concat(touchedRows, string.char(10) .. "  "))
+    print("seed retries:" .. string.char(10) .. "  " .. table.concat(retryRows, string.char(10) .. "  "))
+    print("method detail (all candidates, best first):" .. string.char(10) .. "  " .. table.concat(detailRows, string.char(10) .. "  "))
     print("straight pieces > " .. PATH_CAP .. " yd before the cap (tour paths): " .. totalLong)
     print("methods (generated): " .. table.concat(mc, ", "))
     print("slope violations (generated): " .. (#slopeViol > 0 and table.concat(slopeViol, "; ") or "none"))
