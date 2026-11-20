@@ -18,6 +18,7 @@ local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local OUTDOOR = { [0] = 466.667, 400, 333.333, 266.667, 200, 133.333 }
 local INDOOR = { [0] = 300, 240, 180, 120, 80, 50 }
 
+local ourWaypoint, ourTomTom -- the waypoint ProfPath set (cleared with the route)
 local current -- active route: { map = uiMapID, route = { x1, y1, ... }, label = "..." }
 
 -- ---------- helpers ----------
@@ -34,7 +35,7 @@ local function save()
     if not ProfPathDB then return end
     if current then
         ProfPathDB.route = { map = current.map, route = current.route, label = current.label, open = current.open, spots = current.spots,
-            entrance = current.entrance, cave = current.cave }
+            entrance = current.entrance, cave = current.cave, waypoint = ourWaypoint }
     else
         ProfPathDB.route = nil
     end
@@ -410,7 +411,30 @@ function Map.openMap()
     pcall(drawWorld)
 end
 
+-- Remove the waypoint ProfPath set, but leave one the player placed since.
+local function clearWaypoint()
+    pcall(function()
+        if ourWaypoint and C_Map and C_Map.GetUserWaypoint and C_Map.ClearUserWaypoint then
+            local wp = C_Map.GetUserWaypoint()
+            local px, py
+            if wp and wp.position then px, py = wp.position.x, wp.position.y end
+            if wp and wp.uiMapID == ourWaypoint.map and px and math.abs(px - ourWaypoint.x) < 0.001
+                and math.abs(py - ourWaypoint.y) < 0.001 then
+                C_Map.ClearUserWaypoint()
+                if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+                    C_SuperTrack.SetSuperTrackedUserWaypoint(false)
+                end
+            end
+        end
+    end)
+    pcall(function()
+        if ourTomTom and TomTom and TomTom.RemoveWaypoint then TomTom:RemoveWaypoint(ourTomTom) end
+    end)
+    ourWaypoint, ourTomTom = nil, nil
+end
+
 function Map.clear()
+    clearWaypoint()
     current, world = nil, nil
     save()
     refresh()
@@ -448,6 +472,8 @@ function Map.waypoint()
     pcall(function()
         if C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
             C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(current.map, x, y))
+            ourWaypoint = { map = current.map, x = x, y = y }
+            save()
             if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
                 C_SuperTrack.SetSuperTrackedUserWaypoint(true)
             end
@@ -456,7 +482,8 @@ function Map.waypoint()
     end)
     pcall(function()
         if TomTom and TomTom.AddWaypoint then
-            TomTom:AddWaypoint(current.map, x, y, { title = current.label or "ProfPath route" })
+            if ourTomTom and TomTom.RemoveWaypoint then pcall(TomTom.RemoveWaypoint, TomTom, ourTomTom) end
+            ourTomTom = TomTom:AddWaypoint(current.map, x, y, { title = current.label or "ProfPath route" })
             done = true
         end
     end)
@@ -577,6 +604,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
         if validRoute(saved) then
             current = { map = saved.map, route = saved.route, label = saved.label, open = saved.open, spots = saved.spots,
                 entrance = saved.entrance, cave = saved.cave }
+            ourWaypoint = saved.waypoint
         end
         pcall(setupWorld)
         refresh()
