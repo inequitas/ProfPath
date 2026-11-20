@@ -25,3 +25,4 @@ Map.lua
 Core.lua
 Track.lua
 Minimap.lua
+Debug.lua
