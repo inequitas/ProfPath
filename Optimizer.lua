@@ -119,6 +119,25 @@ local function solve(ctx, unitCost)
     end
     local net = {}
     for i, r in ipairs(recipes) do net[i] = craftCost(ctx, r, unitCost) end
+    -- Tie-breaks between equally cheap ways to the next point (within TIE copper): the higher net
+    -- yield per point (what the crafts sell for minus their materials, not floored at 0 like the
+    -- cost), then the shorter craft time per point, then the lower recipe ID (the recipe list's
+    -- order is random, so without this a tie would be decided differently each session).
+    local yield, cast = {}, {}
+    for i, r in ipairs(recipes) do
+        local m = 0
+        for _, rg in ipairs(r.reagents) do m = m + unitCost(rg[1]) * rg[2] end
+        yield[i] = m < INF and (recovery(ctx, r.productID) * (r.productQty or 1) - m) or -INF
+        cast[i] = r.castTime or 0
+    end
+    local TIE = 0.5
+    local function beats(i, perI, j, perJ)
+        local yi, yj = yield[i] * perI, yield[j] * perJ
+        if math.abs(yi - yj) > TIE then return yi > yj end
+        local ci, cj = cast[i] * perI, cast[j] * perJ
+        if ci ~= cj then return ci < cj end
+        return (recipes[i].id or 0) < (recipes[j].id or 0)
+    end
 
     -- dist[s]: cheapest way to reach skill s.
     -- g[i]: cheapest way to be at skill s with recipe i learned and in use (contiguous run).
@@ -128,7 +147,7 @@ local function solve(ctx, unitCost)
     for i in ipairs(recipes) do g[i] = INF; enter[i] = {} end
 
     for s = s0, target - 1 do
-        local best, bestI = INF, nil
+        local best, bestI, bestPer = INF, nil, nil
         for i, r in ipairs(recipes) do
             local learn = O.oneTimeCost(r)
             local viaEnter = dist[s] + learn
@@ -139,8 +158,11 @@ local function solve(ctx, unitCost)
             local p = O.chance(r, s)
             if ctx.lockAt and ctx.lockAt(s) ~= r.id then p = 0 end -- locked plan: this skill's recipe only
             if p > 0 and net[i] < INF and g[i] < INF then
-                local step = g[i] + net[i] / (p * (r.skillUps or 1))
-                if step < best then best, bestI = step, i end
+                local per = 1 / (p * (r.skillUps or 1)) -- crafts per point
+                local step = g[i] + net[i] * per
+                if step < best - TIE or (step <= best + TIE and (not bestI or beats(i, per, bestI, bestPer))) then
+                    best, bestI, bestPer = step, i, per
+                end
                 g[i] = step -- continuing with this recipe at s+1
             else
                 g[i] = INF

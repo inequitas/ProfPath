@@ -308,6 +308,29 @@ test("lots of owned stock doesn't pull in a route that needs far more of it", fu
     assert(more.cash <= res.cash + 1e-6, ("240 owned %s > 120 owned %s"):format(more.cash, res.cash))
 end)
 
+test("tie-break: equal cost -> highest net yield, then shortest craft time, then recipe ID", function()
+    -- Both crafts sell for more than their materials, so both cost 0 net (floored): a tie.
+    local sells = { [500] = 15, [501] = 30 }
+    local recipes = {
+        R{ id = 1, yellow = 50, gray = 60, productID = 500, reagents = { { 100, 1 } } }, -- yields 5
+        R{ id = 2, yellow = 50, gray = 60, productID = 501, reagents = { { 100, 1 } } }, -- yields 20
+    }
+    local res = O.optimize(ctxWith({ [100] = 10 }, recipes, { vendorSell = function(id) return sells[id] end }))
+    eq(res.steps[1].recipe.id, 2, "higher net yield")
+    eq(#res.steps, 1, "one recipe all the way")
+    -- Same cost and yield: the shorter craft wins, whichever comes first in the list.
+    recipes = {
+        R{ id = 1, yellow = 50, gray = 60, castTime = 5000, reagents = { { 100, 1 } } },
+        R{ id = 2, yellow = 50, gray = 60, castTime = 3000, reagents = { { 100, 1 } } },
+    }
+    eq(O.optimize(ctxWith({ [100] = 10 }, recipes)).steps[1].recipe.id, 2, "shorter craft time")
+    recipes[1], recipes[2] = recipes[2], recipes[1]
+    eq(O.optimize(ctxWith({ [100] = 10 }, recipes)).steps[1].recipe.id, 2, "shorter craft time, list reversed")
+    -- Everything equal: the lower recipe ID, so the plan is the same every session.
+    recipes = { R{ id = 7, yellow = 50, gray = 60, reagents = { { 100, 1 } } }, R{ id = 3, yellow = 50, gray = 60, reagents = { { 100, 1 } } } }
+    eq(O.optimize(ctxWith({ [100] = 10 }, recipes)).steps[1].recipe.id, 3, "lower ID")
+end)
+
 test("onlyLevel: a locked plan levels only with its recipes", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } }, -- 10

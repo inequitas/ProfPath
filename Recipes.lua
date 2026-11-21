@@ -517,7 +517,7 @@ function R.build(prof)
             for i = 1, #rg, 2 do reagents[#reagents + 1] = { rg[i], rg[i + 1] } end
             local r = { id = id, name = localName(id, d[8]), minSkill = d[2], yellow = d[3], gray = d[4],
                 productID = d[5], productQty = d[6] or 1, reagents = reagents, learned = learned[id] == true,
-                focus = ns.Data.focus and ns.Data.focus[id] }
+                focus = ns.Data.focus and ns.Data.focus[id], castTime = ns.Data.castTime and ns.Data.castTime[id] }
             local ri = ns.Data.recipeItems[id]
             local skip
             -- Long cooldown (transmutes, Mooncloth): never a leveling step; still a known producer.
