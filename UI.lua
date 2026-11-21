@@ -360,6 +360,16 @@ local LINE = 34
 local function line(icon, main, sub, right, opts)
     opts = opts or {}
     local h = sub and LINE or 24
+    -- The description wraps; the line grows to fit it (measured first so the background, click area
+    -- and icons match the final height).
+    local subF
+    if sub then
+        local sx = 6 + (opts.status and 22 or 0) + (icon and 28 or 0)
+        local rw = right and (opts.rightW or 150) or 0
+        subF = text("GameFontDisableSmall", sx, y + 19, CONTENT - sx - rw - 8, sub, "LEFT", true)
+        local sh = subF.GetStringHeight and subF:GetStringHeight() or 0
+        if type(sh) == "number" and sh > 14 then h = math.max(h, 19 + sh + 5) end
+    end
     if opts.highlight then tex(nil, 0, y, CONTENT, h, 0.2, 0.5, 1, 0.25)
     elseif opts.zebra then tex(nil, 0, y, CONTENT, h, 1, 1, 1, 0.04) end
     if opts.onClick then clickable(h, opts.onClick) end
@@ -368,7 +378,6 @@ local function line(icon, main, sub, right, opts)
     if icon then tex(icon, x, y + (h - 22) / 2, 22, 22); x = x + 28 end
     local rightW = right and (opts.rightW or 150) or 0
     text("GameFontHighlight", x, y + (sub and 3 or 5), CONTENT - x - rightW - 8, main)
-    if sub then text("GameFontDisableSmall", x, y + 19, CONTENT - x - rightW - 8, sub) end
     if right then text("GameFontHighlight", CONTENT - rightW - 6, y + (h - 12) / 2, rightW, right, "RIGHT") end
     y = y + h + 2
 end
@@ -402,19 +411,24 @@ local function trainerHint(profName, rankName, x0, anyTrainer)
     label = (dist and "Closest " .. label:lower() or label)
     local s = ("|cffffd100%s:|r  %s%s"):format(label, ns.Recipes.trainerText(loc, dist),
         loc.title and loc.title ~= "" and ("  |cff888888<" .. loc.title .. ">|r") or "")
-    text("GameFontHighlightSmall", x0, y + 5, CONTENT - x0 - 120, s, "LEFT", false)
+    -- Height a wrapped font string takes (at least `min`): GetStringHeight can be 0 or missing.
+    local function tall(f, min)
+        local h = f and f.GetStringHeight and f:GetStringHeight()
+        return (type(h) == "number" and h > min) and h or min
+    end
+    local f = text("GameFontHighlightSmall", x0, y + 5, CONTENT - x0 - 120, s, "LEFT", true)
     button("Waypoint", CONTENT - 110, 104, function()
         if ns.Recipes.waypoint(loc) then ns.chat("Waypoint set: " .. ns.Recipes.trainerText(loc))
         else ns.chat("Couldn't set a map pin here. " .. ns.Recipes.trainerText(loc)) end
     end)
-    y = y + 26
+    y = y + math.max(26, tall(f, 12) + 10)
     -- A second option, in case the first can't teach it after all (titles can lag behind the game).
     local alt = list[2]
     if alt then
-        text("GameFontDisableSmall", x0, y, CONTENT - x0 - 8,
+        f = text("GameFontDisableSmall", x0, y, CONTENT - x0 - 8,
             ("If not: %s%s"):format(ns.Recipes.trainerText(alt.loc, alt.dist),
-                alt.loc.title and alt.loc.title ~= "" and (" <" .. alt.loc.title .. ">") or ""))
-        y = y + 18
+                alt.loc.title and alt.loc.title ~= "" and (" <" .. alt.loc.title .. ">") or ""), "LEFT", true)
+        y = y + tall(f, 12) + 6
     end
     y = y + 4
 end
