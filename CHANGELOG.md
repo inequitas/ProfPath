@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.1: Trainers, owned stock and steadier plans *(2026-11-21)*
+
+**Fixed**
+- **The right trainer for each recipe.** A "learn" step now points to the closest trainer who can teach that recipe's skill (Journeyman up to 149, Expert from 150, Artisan from 225), instead of the nearest trainer of any rank. Before, it could send you to a Journeyman who had nothing to teach you.
+- **A big stock no longer makes the plan dearer.** With lots of one material in your bags, the planner could pick a route that needs far more of it than you own (Tailoring: 726 Bolts of Runecloth led to a route needing 1799, costing more than with half the bolts). It now also plans as if you owned nothing, takes your stock off that plan's shopping list, and keeps the cheapest. Owned stock now saves about what it's worth in every profession.
+- **"How far ahead" works on a plan you're following.** Changing the range now re-plans to the new end point (162 + 30 → 192) instead of keeping the old one.
+- **Show route works on the skinning list** (clicking it only expanded the zone).
+- **Long text wraps** instead of being cut off.
+
+**Changed**
+- **Equally cheap recipes: best yield, then quickest.** When two recipes cost the same, the plan takes the one whose crafts sell for the most over their materials, then the one with the shorter craft time. Plans are now the same every session (before, a tie could go either way after a /reload).
+- Also on [Wago Addons](https://addons.wago.io/addons/profpath).
+
 ## v0.2.0: Gathering routes, skinning, fishing and a smarter planner *(2026-11-21)*
 
 **Added**

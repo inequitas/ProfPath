@@ -6,7 +6,7 @@
 
 **The cheapest way to level your professions in WoW: Forever, worked out from your realm's live auction prices.**
 
-Download: [CurseForge](https://www.curseforge.com/wow/addons/profpath) (WoW: Forever).
+Download: [CurseForge](https://www.curseforge.com/wow/addons/profpath) or [Wago Addons](https://addons.wago.io/addons/profpath) (WoW: Forever).
 Questions or feedback: [Discord](https://discord.com/users/120143105952317440) or [open an issue](https://github.com/inequitas/ProfPath/issues).
 
 ProfPath looks at your character (known recipes, bags, gold) and your auction house, plans the cheapest
@@ -20,17 +20,18 @@ minimap button: **Prepare → Plan → Do it**. Run `/pp help` for all commands.
 
 ## What's new
 
-**[v0.2.0](https://github.com/inequitas/ProfPath/releases/tag/v0.2.0): Gathering routes, skinning, fishing and a smarter planner** *(2026-11-21)*
+**[v0.2.1](https://github.com/inequitas/ProfPath/releases/tag/v0.2.1): Trainers, owned stock and steadier plans** *(2026-11-21)*
 
-- **Gathering routes** for Mining, Herbalism and Skinning: where to go for your skill, and a compact
-  loop on the world map and minimap that stays on walkable ground, goes around lakes and avoids enemy
-  towns and dangerous camps. Closest zones (and ones with a known flight path) come first.
-- **Skinning by level:** beasts that suit your skill and your character level, listed by name.
-- **Hot spots and caves:** mines and dense clusters near a route; cave waypoints go to the entrance.
-- **Fishing advice:** what to do at your skill, lures, and waypoints to Old Man Heming and Nat Pagle.
-- **Smarter planner:** owned items only cover the units you have, batches stay fixed while you craft,
-  and recalculating no longer freezes the game.
-- **Crafting stations** are named, and **non-English game clients** are supported.
+- **The right trainer:** "learn" steps point to the closest trainer who can teach that recipe's skill.
+- **Owned stock always helps:** a big stock of one material no longer pulls in a route that needs far
+  more of it.
+- **Steadier plans:** equally cheap recipes go to the best yield, then the quickest craft, so the plan
+  is the same every session. Changing "How far ahead" re-plans a plan you're following.
+- Show route works on the skinning list, and long text wraps.
+- Now also on [Wago Addons](https://addons.wago.io/addons/profpath).
+
+Earlier: **v0.2.0** added gathering routes for Mining, Herbalism and Skinning, skinning by level,
+fishing advice and a smarter planner.
 
 Earlier versions and full details: [CHANGELOG.md](CHANGELOG.md).
 
@@ -55,8 +56,9 @@ data). Design notes are in `PLAN.md`.
 To release: raise `## Version:` in `ProfPath.toc`, add the release to `CHANGELOG.md` and to "What's new"
 above, run the tests, commit, then push a matching tag
 (`git tag v0.1.1` and `git push origin v0.1.1`). The Release workflow (`.github/workflows/release.yml`,
-BigWigs packager with `.pkgmeta`) builds the zip and uploads it to CurseForge for WoW Forever and to a GitHub
-release. It needs the repository secret `CF_API_KEY` (a CurseForge API token).
+BigWigs packager with `.pkgmeta`) builds the zip and uploads it to CurseForge and Wago Addons for WoW Forever and
+to a GitHub release. It needs the repository secrets `CF_API_KEY` (CurseForge API token) and `WAGO_API_TOKEN`
+(Wago API key).
 
 ## Credits
 

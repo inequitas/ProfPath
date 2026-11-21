@@ -10,14 +10,16 @@ Made for **WoW: Forever**.
 
 ## What's new
 
-**v0.2.0: Gathering routes, skinning, fishing and a smarter planner** *(2026-11-21)*
+**v0.2.1: Trainers, owned stock and steadier plans** *(2026-11-21)*
 
-- **Gathering routes** for Mining, Herbalism and Skinning: where to go for your skill, and a compact loop on the world map and minimap that stays on walkable ground, goes around lakes and avoids enemy towns and dangerous camps. Closest zones (and ones with a known flight path) come first.
-- **Skinning by level:** beasts that suit your skill and your character level, listed by name.
-- **Hot spots and caves:** mines and dense clusters near a route; cave waypoints go to the entrance.
-- **Fishing advice:** what to do at your skill, lures, and waypoints to Old Man Heming and Nat Pagle.
-- **Smarter planner:** owned items only cover the units you have, batches stay fixed while you craft, and recalculating no longer freezes the game.
-- **Crafting stations** are named, and **non-English game clients** are supported.
+- **The right trainer:** "learn" steps point to the closest trainer who can teach that recipe's skill.
+- **Owned stock always helps:** a big stock of one material no longer pulls in a route that needs far more of it.
+- **Steadier plans:** equally cheap recipes go to the best yield, then the quickest craft, so the plan is the same every session. Changing "How far ahead" re-plans a plan you're following.
+- Show route works on the skinning list, and long text wraps.
+- Now also on [Wago Addons](https://addons.wago.io/addons/profpath).
+
+Earlier: **v0.2.0** added gathering routes for Mining, Herbalism and Skinning, skinning by level,
+fishing advice and a smarter planner.
 
 Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/main/CHANGELOG.md).
 
