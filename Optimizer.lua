@@ -220,6 +220,42 @@ local function shoppingList(steps, unitCost)
     return need, crafted
 end
 
+-- Craft bought materials from free stock where you can: an item the plan buys (Heavy Leather) that a
+-- learned recipe makes from materials all in your free starting stock (Medium Leather) is crafted as
+-- far as that stock goes, and only the rest is bought. Free stock costs no gold, so this always
+-- saves; stock you'd have to buy is never converted (5 Medium at 99c is dearer than 1 Heavy at 221c).
+-- Changes need and crafted in place. Returns { [recipe] = true } for recipes crafted only partly
+-- (the rest of the product is bought): the Do it tab crafts those from what's in the bags.
+local function convertFree(need, crafted, producers, free)
+    local partial = {}
+    if not next(free) then return partial end
+    local left = {} -- free units not already used by the plan
+    for id, n in pairs(free) do left[id] = math.max(n - (need[id] or 0), 0) end
+    local ids = {}
+    for id in pairs(need) do ids[#ids + 1] = id end
+    table.sort(ids) -- same result every session
+    for _, itemID in ipairs(ids) do
+        for _, r in ipairs(producers[itemID] or {}) do
+            local qty = need[itemID] or 0
+            if qty <= 0 then break end
+            local k = math.ceil(qty / (r.productQty or 1) - 1e-9) -- crafts wanted
+            for _, rg in ipairs(r.reagents) do
+                k = math.min(k, math.floor((left[rg[1]] or 0) / rg[2]))
+            end
+            if k > 0 and r.reagents[1] then
+                for _, rg in ipairs(r.reagents) do
+                    left[rg[1]] = left[rg[1]] - rg[2] * k
+                    need[rg[1]] = (need[rg[1]] or 0) + rg[2] * k
+                end
+                need[itemID] = math.max(qty - k * (r.productQty or 1), 0)
+                if need[itemID] < 1e-9 then need[itemID] = nil else partial[r] = true end
+                crafted[r] = (crafted[r] or 0) + k
+            end
+        end
+    end
+    return partial
+end
+
 -- zeroFree: true = owned stock costs nothing; false = limited (see freeAverage); "market" = owned
 -- stock is priced like anything else when choosing recipes (only the shopping list subtracts it).
 local function optimizeWith(ctx, zeroFree)
@@ -237,6 +273,7 @@ local function optimizeWith(ctx, zeroFree)
     local owned = ctx.owned or {}
     -- free[itemID] = units that cost nothing (stock you started with). ownedFree = everything owned.
     local free = ctx.free or (ctx.ownedFree == true and owned) or {}
+    local stockFree = free -- kept for convertFree below, also in the "market" pass
 
     -- Free stock only covers the units you have. Before the quantity needed is known, price a free
     -- item as the average over a typical amount (FREE_REF units) with the free units at 0, so a few
@@ -340,6 +377,7 @@ local function optimizeWith(ctx, zeroFree)
         end
     end
     local _, crafted = shoppingList(steps, unitCost)
+    local partial = convertFree(need, crafted, producers, stockFree)
 
     -- Shopping list with what it really costs to buy the quantity (walking the AH order book).
     local shopping, cash = {}, 0
@@ -364,7 +402,9 @@ local function optimizeWith(ctx, zeroFree)
 
     -- Intermediates to craft first (e.g. cured hides), and what is spent on learning recipes.
     local intermediates = {}
-    for r, n in pairs(crafted) do intermediates[#intermediates + 1] = { recipe = r, crafts = math.ceil(n - 1e-9) } end
+    for r, n in pairs(crafted) do
+        intermediates[#intermediates + 1] = { recipe = r, crafts = math.ceil(n - 1e-9), fromStock = partial[r] }
+    end
     table.sort(intermediates, function(a, b) return (a.recipe.name or "") < (b.recipe.name or "") end)
     local learnTotal, back = 0, 0
     for _, st in ipairs(steps) do
@@ -464,9 +504,12 @@ end
 -- `intermediates`, e.g. Cured Light Hide) becomes crafts of it, and only those crafts need raw
 -- materials. Returns short[itemID] (to buy), used[itemID] (taken from bags), craftsLeft[recipe].
 function O.remaining(recipe, crafts, intermediates, bagCount)
-    local craftVia = {}
+    local craftVia, fromStock = {}, {}
     for _, it in ipairs(intermediates or {}) do
-        if it.recipe.productID then craftVia[it.recipe.productID] = it.recipe end
+        if it.recipe.productID then
+            craftVia[it.recipe.productID] = it.recipe
+            fromStock[it.recipe] = it.fromStock
+        end
     end
     local avail, used, short, craftsLeft = {}, {}, {}, {}
     local function expand(itemID, qty)
@@ -477,7 +520,21 @@ function O.remaining(recipe, crafts, intermediates, bagCount)
         local rest = qty - take
         if rest <= 0 then return end
         local via = craftVia[itemID]
-        if via then
+        if via and fromStock[via] then
+            -- Crafted only from stock (e.g. Heavy Leather from your own Medium Leather): craft what the
+            -- bags hold materials for, buy the rest ready-made.
+            local c = math.ceil(rest / (via.productQty or 1) - 1e-9)
+            for _, rg in ipairs(via.reagents) do
+                if avail[rg[1]] == nil then avail[rg[1]] = bagCount(rg[1]) or 0 end
+                c = math.min(c, math.floor(avail[rg[1]] / rg[2]))
+            end
+            if c > 0 then
+                craftsLeft[via] = (craftsLeft[via] or 0) + c
+                for _, rg in ipairs(via.reagents) do expand(rg[1], rg[2] * c) end
+                rest = rest - c * (via.productQty or 1)
+            end
+            if rest > 0 then short[itemID] = (short[itemID] or 0) + rest end
+        elseif via then
             local c = math.ceil(rest / (via.productQty or 1) - 1e-9)
             craftsLeft[via] = (craftsLeft[via] or 0) + c
             for _, rg in ipairs(via.reagents) do expand(rg[1], rg[2] * c) end

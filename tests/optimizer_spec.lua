@@ -331,6 +331,42 @@ test("tie-break: equal cost -> highest net yield, then shortest craft time, then
     eq(O.optimize(ctxWith({ [100] = 10 }, recipes)).steps[1].recipe.id, 3, "lower ID")
 end)
 
+test("free stock of a raw material is crafted into a bought intermediate, the rest is bought", function()
+    -- Heavy Leather (4234) 221c on the AH, or 5 Medium Leather (2319) at 99c: buying is cheaper,
+    -- unless the Medium Leather is already yours.
+    local recipes = {
+        R{ id = 1, yellow = 125, gray = 135, productID = 4234, reagents = { { 2319, 5 } } }, -- Heavy Leather (gray)
+        R{ id = 2, yellow = 160, gray = 180, reagents = { { 4234, 10 } } },                   -- uses Heavy Leather
+    }
+    local prices = { [4234] = 221, [2319] = 99 }
+    local function plan(n)
+        local e = { skill = 160, target = 170 }
+        if n then e.owned, e.free = { [2319] = n }, { [2319] = n } end
+        return O.optimize(ctxWith(prices, recipes, e))
+    end
+    local function line(res, id) for _, sh in ipairs(res.shopping) do if sh.itemID == id then return sh end end end
+    local none = plan()
+    local heavy = line(none, 4234).needed
+    local res = plan(60) -- 60 Medium = 12 Heavy
+    eq(line(res, 4234).buy, heavy - 12, "buy the rest of the Heavy Leather")
+    eq(line(res, 2319).buy, 0, "no Medium Leather bought")
+    eq(res.intermediates[1] and res.intermediates[1].crafts, 12, "craft 12 Heavy Leather")
+    assert(res.intermediates[1].fromStock, "marked as crafted from stock")
+    near(none.cash - res.cash, 12 * 221, "saves 12 Heavy Leather")
+    -- Bought Medium Leather (not free) is never crafted: 5 x 99 > 221.
+    local later = O.optimize(ctxWith(prices, recipes, { skill = 160, target = 170, owned = { [2319] = 60 }, free = {} }))
+    eq(#later.intermediates, 0, "bought stock isn't converted")
+    -- Do it tab: craft what the bags hold Medium Leather for, buy the rest of the Heavy Leather.
+    local bags = { [2319] = 23, [4234] = 4 }
+    local short, used, craftsLeft = O.remaining(recipes[2], 3, res.intermediates, function(id) return bags[id] or 0 end)
+    -- 3 crafts need 30 Heavy: 4 in bags, 4 crafted from 20 Medium (23 in bags), 22 to buy
+    eq(used[4234], 4, "Heavy Leather from bags")
+    eq(craftsLeft[recipes[1]], 4, "4 crafted from Medium in bags")
+    eq(used[2319], 20, "20 Medium used")
+    eq(short[4234], 22, "the rest bought ready-made")
+    eq(short[2319], nil, "no Medium bought")
+end)
+
 test("onlyLevel: a locked plan levels only with its recipes", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } }, -- 10
