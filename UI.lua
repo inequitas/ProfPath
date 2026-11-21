@@ -1137,17 +1137,30 @@ local function renderDo(state)
         local avail = b.gold - ((not r.learned) and (st.learnCost or 0) or 0)
         local perCraft = st.cash / st.expectedCrafts
         if st.cash > avail and perCraft > 0 then
-            batchCrafts = math.max(1, math.min(crafts, floor(avail / perCraft)))
-            -- If your bags already hold (nearly) a full batch, that is the batch: don't ask you to buy
-            -- for one or two more crafts because a little gold freed up (e.g. after learning the recipe).
+            local fresh = math.max(1, math.min(crafts, floor(avail / perCraft)))
+            -- A batch is fixed once set: its size includes the learn cost, so learning the recipe (or a
+            -- small price change) doesn't grow it halfway. While buying, the list shows what's missing
+            -- for that batch; once it's all in the bags, the batch is what the bags cover and counts down
+            -- as you craft; when it's used up, the next batch is sized fresh from your gold.
             local covered
             for _, rg in ipairs(r.reagents or {}) do
                 local n = floor(bagCount(rg[1]) / rg[2])
                 covered = covered and math.min(covered, n) or n
             end
-            if covered and covered > 0 and covered >= floor(batchCrafts * 0.85) then
-                batchCrafts = math.min(crafts, covered)
+            covered = covered or 0
+            local c = ns.Recipes.char()
+            c.batch = c.batch or {}
+            local key = r.id .. ":" .. st.fromSkill
+            local rec = c.batch[key]
+            if rec and rec.ready and covered == 0 then rec = nil end -- batch used up: size the next one
+            if not rec then
+                -- bags already hold (nearly) a full batch: that's the batch
+                local n = (covered > 0 and covered >= floor(fresh * 0.85)) and covered or fresh
+                rec = { n = n }
+                c.batch[key] = rec
             end
+            if covered >= rec.n then rec.ready = true end
+            batchCrafts = rec.ready and math.max(1, math.min(crafts, covered)) or math.min(crafts, rec.n)
             if batchCrafts >= crafts then batchCrafts = nil end
         end
     end
