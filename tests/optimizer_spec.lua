@@ -367,6 +367,36 @@ test("free stock of a raw material is crafted into a bought intermediate, the re
     eq(short[2319], nil, "no Medium bought")
 end)
 
+test("free hides become cured hides with vendor salt, when that beats buying them", function()
+    -- Cured Medium Hide (4233) 150c on the AH, or 1 Medium Hide (4232, yours) + 1 Salt (4289, vendor 50c).
+    local recipes = {
+        R{ id = 1, yellow = 115, gray = 125, productID = 4233, reagents = { { 4232, 1 }, { 4289, 1 } } },
+        R{ id = 2, yellow = 160, gray = 180, reagents = { { 4233, 2 } } },
+    }
+    local function plan(salt)
+        return O.optimize(ctxWith({ [4233] = 150, [4232] = 300 }, recipes, { skill = 160, target = 170,
+            vendorBuy = function(id) if id == 4289 then return salt end end,
+            owned = { [4232] = 10 }, free = { [4232] = 10 } }))
+    end
+    local function line(res, id) for _, sh in ipairs(res.shopping) do if sh.itemID == id then return sh end end end
+    local res = plan(50)
+    eq(res.intermediates[1] and res.intermediates[1].crafts, 10, "10 hides cured")
+    eq(line(res, 4289).buy, 10, "10 salt bought")
+    eq(line(res, 4289).source, "vendor", "salt from the vendor")
+    eq(line(res, 4232).buy, 0, "no hides bought")
+    -- Salt dearer than a ready-made cured hide: buy the cured hides instead.
+    res = plan(200)
+    eq(#res.intermediates, 0, "salt too dear: nothing cured")
+    -- Do it tab: 6 hides in bags, no salt: cure 6 (buy 6 salt), buy the rest cured.
+    res = plan(50)
+    local bags = { [4232] = 6 }
+    local short, used, craftsLeft = O.remaining(recipes[2], 8, res.intermediates, function(id) return bags[id] or 0 end)
+    eq(craftsLeft[recipes[1]], 6, "6 cured from the hides in bags")
+    eq(short[4289], 6, "6 salt to buy")
+    eq(short[4233], 10, "10 cured hides to buy")
+    eq(short[4232], nil, "no hides to buy")
+end)
+
 test("onlyLevel: a locked plan levels only with its recipes", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } }, -- 10
