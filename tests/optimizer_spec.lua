@@ -284,6 +284,30 @@ test("free stock: starting stock is free, units bought later are not", function(
     eq(O.optimize(ctxWith(prices, recipes, { owned = { [100] = 90 }, free = {} })).steps[1].recipe.id, 2)
 end)
 
+test("lots of owned stock doesn't pull in a route that needs far more of it", function()
+    -- Real case (Tailoring): 726 owned Bolts of Runecloth made a bolt-hungry route look free; it
+    -- needed 1799 bolts, so the plan cost more than with half the bolts. Here: 150 owned of 100.
+    -- H needs 5 of item 100 per craft, L needs 1 plus 30c of item 200. 120 owned: averaged over
+    -- what H needs, item 100 looks cheap enough that H stays best, but H buys far more of it.
+    local recipes = {
+        R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 }, { 200, 1 } } }, -- L
+        R{ id = 2, yellow = 50, gray = 60, reagents = { { 100, 5 } } },             -- H
+    }
+    local prices = { [100] = 10, [200] = 30 }
+    local function withStock(n, extra)
+        local e = { target = 60, owned = { [100] = n }, free = { [100] = n } }
+        for k, v in pairs(extra or {}) do e[k] = v end
+        return ctxWith(prices, recipes, e)
+    end
+    local res = O.optimize(withStock(120))
+    assert(res.ok)
+    local onlyL = O.optimize(withStock(120, { onlyLevel = { [1] = true } }))
+    assert(res.cash <= onlyL.cash + 1e-6, ("plan %s > L with the stock %s"):format(res.cash, onlyL.cash))
+    -- and more stock never costs more
+    local more = O.optimize(withStock(240))
+    assert(more.cash <= res.cash + 1e-6, ("240 owned %s > 120 owned %s"):format(more.cash, res.cash))
+end)
+
 test("onlyLevel: a locked plan levels only with its recipes", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } }, -- 10

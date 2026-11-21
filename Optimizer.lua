@@ -198,7 +198,11 @@ local function shoppingList(steps, unitCost)
     return need, crafted
 end
 
+-- zeroFree: true = owned stock costs nothing; false = limited (see freeAverage); "market" = owned
+-- stock is priced like anything else when choosing recipes (only the shopping list subtracts it).
 local function optimizeWith(ctx, zeroFree)
+    local atMarket = zeroFree == "market"
+    if atMarket then zeroFree = false end
     ctx.target = ctx.target or ctx.maxSkill
     local producers = {}
     for _, r in ipairs(ctx.recipes) do
@@ -230,6 +234,7 @@ local function optimizeWith(ctx, zeroFree)
         return cost / FREE_REF
     end
     local override = {}
+    if atMarket then free = {} end -- choose as if nothing were owned
     for itemID, n in pairs(free) do if n > 0 then override[itemID] = zeroFree and 0 or freeAverage(itemID, n) end end
 
     local steps, total, stuckAt, unitCost, missing, need, dist
@@ -409,6 +414,14 @@ function O.optimize(ctx)
         if not partial then return a end
     end
     local b = optimizeWith(ctx, false)
+    -- Third candidate: the route you'd pick owning nothing, with your stock then taken off its
+    -- shopping list. One price per item can't say "free up to what you own, full price after", so a
+    -- route that needs far more than you own can look cheap in a and b; this one never does.
+    local c = optimizeWith(ctx, "market")
+    if c.ok and (not b.ok or not a.ok) then
+        if not b.ok then b = c else a = c end
+        c = nil
+    end
     if not a.ok then return b end
     if not b.ok then return a end
     -- gathered materials cost no gold but are not free: count them at their gather value
@@ -419,7 +432,9 @@ function O.optimize(ctx)
         end
         return (r.cash or 0) + (r.learnTotal or 0) - (r.sellBack or 0) + g
     end
-    return real(b) < real(a) and b or a
+    local best = real(b) < real(a) and b or a
+    if c and c.ok and real(c) < real(best) then best = c end
+    return best
 end
 
 -- ---------- what is still missing for N crafts, given what is in the bags ----------
