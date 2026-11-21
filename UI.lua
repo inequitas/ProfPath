@@ -681,11 +681,46 @@ local function zoneList(prof, kind)
         if fp then return math.min(d, 1500), ("flight path known, %.1f km"):format(d / 1000) end
         return d, ("%.1f km away"):format(d / 1000)
     end
+    -- Skinning: beasts must suit your character level too. A zone whose beasts are more than 2
+    -- levels above you goes to the end of the list (marked); if your skill range has no zone at
+    -- your level, zones from the next range down (easier beasts, fewer skill-ups) are offered too.
+    local plevel = kind == "skinning" and UnitLevel and UnitLevel("player") or nil
+    local function beastLevel(z) -- highest beast level along the loop, from "Name 36-37" strings
+        local top
+        for _, m in ipairs(z.mobs or {}) do
+            local hi = tonumber(m:match("(%d+)%s*$"))
+            if hi and (not top or hi > top) then top = hi end
+        end
+        return top
+    end
     local mains = {}
-    for i, z in ipairs(band.zones) do
-        if not z.hotspot and (z.side == "C" or not side or z.side == side) then
-            local ok, score, note = pcall(reach, z)
-            mains[#mains + 1] = { z = z, i = i, score = ok and score or 1e8, note = ok and note or nil }
+    local function collect(b, lower)
+        for i, z in ipairs(b.zones) do
+            if not z.hotspot and (z.side == "C" or not side or z.side == side) then
+                local ok, score, note = pcall(reach, z)
+                score, note = ok and score or 1e8, ok and note or nil
+                local top = plevel and beastLevel(z)
+                local over = top and top - plevel or 0
+                local extra
+                if over > 2 then
+                    score = score + 1e10 * over
+                    extra = ("beasts up to level %d: above your level %d"):format(top, plevel)
+                elseif lower then
+                    score = score + 2000 -- a little behind same-range zones at your level
+                    extra = "easier beasts (fewer skill-ups), at your level"
+                end
+                mains[#mains + 1] = { z = z, i = i + (lower and 100 or 0), score = score, note = note, extra = extra }
+            end
+        end
+    end
+    collect(band, false)
+    if plevel then
+        local fits = false
+        for _, m in ipairs(mains) do if not (m.extra and m.extra:find("above")) then fits = true end end
+        if not fits then
+            for bi, b in ipairs(bands) do
+                if b == band and bands[bi - 1] then collect(bands[bi - 1], true) end
+            end
         end
     end
     table.sort(mains, function(a, b) if a.score ~= b.score then return a.score < b.score end return a.i < b.i end)
@@ -694,7 +729,7 @@ local function zoneList(prof, kind)
     -- Hot spots are one info line per zone (they're drawn in yellow with the zone's route).
     local rows = {}
     local function addZone(m)
-        rows[#rows + 1] = { z = m.z, note = m.note }
+        rows[#rows + 1] = { z = m.z, note = m.note, extra = m.extra }
         local n, caves = 0, {}
         for _, o in ipairs(band.zones) do
             if o.hotspot and o.area == m.z.area then
@@ -738,6 +773,7 @@ local function zoneList(prof, kind)
             if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
             if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
             if row.note then bits[#bits + 1] = row.note end
+            if row.extra then bits[#bits + 1] = "|cffff8040" .. row.extra .. "|r" end
             if z.mobs and #z.mobs > 0 then bits[#bits + 1] = "skin: " .. table.concat(z.mobs, ", ") end
             if z.hotspot and z.cave and z.entrance then
                 bits[#bits + 1] = ("entrance at %.0f, %.0f"):format(z.entrance[1], z.entrance[2])
