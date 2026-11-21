@@ -373,7 +373,12 @@ do
     near, d = ns.Recipes.trainerFor("Tailoring")
     assert(near.npc == "Me'lynn" and d, "closest in Darnassus: " .. near.npc)
     near, d = ns.Recipes.trainerFor("Tailoring", "Expert")
-    assert(near.npc == "Sellandus" and d == nil, "seen teaching Expert wins, even on another continent")
+    -- closest trainer that can teach it: an Expert (by title) here beats Sellandus on another continent
+    assert(d and near.npc ~= "Sellandus" and (near.cap or 0) >= 225,
+        "closest capable trainer, got " .. near.npc .. " " .. tostring(d))
+    -- recipe needing skill 149: a Journeyman trainer is enough; 150 needs an Expert
+    assert(ns.Recipes.rankForSkill(149) == "Journeyman" and ns.Recipes.rankForSkill(150) == "Expert"
+        and ns.Recipes.rankForSkill(1) == "Apprentice" and ns.Recipes.rankForSkill(300) == "Artisan", "rankForSkill")
     ns.UI.setTab(1)                                                   -- trainer hint with alternative renders
     ns.UI.setTab(1); ns.UI.setTab(2)
     local ch = ns.Recipes.char(); ch.commit, ch.stock = {}, {}

@@ -383,7 +383,7 @@ local function cards(list)
 end
 
 -- Where to go: the remembered trainer (name, zone, coordinates) with a Waypoint button.
-local function trainerHint(profName, rankName, x0)
+local function trainerHint(profName, rankName, x0, anyTrainer)
     x0 = x0 or 62
     local list = ns.Recipes.trainersFor(profName, rankName)
     local best = list[1]
@@ -394,7 +394,7 @@ local function trainerHint(profName, rankName, x0)
         return
     end
     local loc, dist = best.loc, best.dist
-    local label = (rankName and (rankName .. " trainer") or "Trainer")
+    local label = ((rankName and not anyTrainer) and (rankName .. " trainer") or "Trainer")
     label = (dist and "Closest " .. label:lower() or label)
     local s = ("|cffffd100%s:|r  %s%s"):format(label, ns.Recipes.trainerText(loc, dist),
         loc.title and loc.title ~= "" and ("  |cff888888<" .. loc.title .. ">|r") or "")
@@ -442,7 +442,7 @@ local function renderPrepare(state)
     line(nil, "Trainer", info.trainerSeen and "Recipe costs and skill requirements are known."
         or ("Visit a %s trainer once so recipe costs are known."):format(prof.name), nil,
         { status = info.trainerSeen and ICON_OK or ICON_TODO })
-    trainerHint(prof.name, nil, 34)
+    trainerHint(prof.name, ns.Recipes.rankForSkill(prof.rank), 34, true)
 
     line(nil, "Recipe data", ns.Data.build and ("Game data for build %s."):format(ns.Data.build)
         or "Missing: run tools\\build_data.ps1 and /reload.", nil, { status = ns.Data.build and ICON_OK or ICON_BAD })
@@ -1115,7 +1115,9 @@ local function renderDo(state)
     if not r.learned then
         line(itemIcon(r.productID), num() .. "Learn " .. (r.name or "?"), learnText(r), money(r.learnCost or 0),
             { status = ICON_TODO })
-        if not (r.learnSource and r.learnSource.kind == "item") then trainerHint(prof.name) end
+        if not (r.learnSource and r.learnSource.kind == "item") then
+            trainerHint(prof.name, ns.Recipes.rankForSkill(r.learnReq or r.minSkill), nil, true)
+        end
     else
         line(itemIcon(r.productID), num() .. "Learn " .. (r.name or "?"), "You know this recipe.", nil, { status = ICON_OK })
     end

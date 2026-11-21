@@ -31,7 +31,19 @@ C_Spell = { GetSpellName = function() return nil end }
 dofile(svPath)
 local DB = ProfPathDB
 local key, char
-for k, c in pairs(DB.chars) do if c.skill and c.skill[profName] then key, char = k, c end end
+-- PP_FAKE=<skillLine>: give the first saved character this profession (rank arg[3] or 1, max 300), so
+-- professions nobody has can be planned with the real saved prices (tests/sweep.lua uses it).
+local fakeLine = tonumber(os.getenv("PP_FAKE") or "")
+if fakeLine then
+    for k, c in pairs(DB.chars) do if not key or k < key then key, char = k, c end end
+    char.skill = char.skill or {}
+    for n in pairs(char.skill) do if n ~= profName then char.skill[n] = nil end end
+    char.skill[profName] = { rank = tonumber(arg[3]) or 1, max = 300, skillLine = fakeLine }
+    char.live = {}; char.commit = {}; char.batch = {}
+end
+if not fakeLine then
+    for k, c in pairs(DB.chars) do if c.skill and c.skill[profName] then key, char = k, c end end
+end
 assert(key, "no saved character with " .. profName)
 local sk = char.skill[profName]
 local rank = tonumber(arg[3]) or sk.rank
@@ -70,13 +82,14 @@ if os.getenv("PP_NOLOCK") then char.commit = {} end
 if arg[4] then opt.budgetAmount = tonumber(arg[4]) end
 if arg[5] then opt.range = tonumber(arg[5]) or false end
 if os.getenv("PP_GATHER") == "off" then opt.gather = false end
+if os.getenv("PP_FULL") then opt.budget = "off"; opt.range = false end -- whole profession, no gold limit
 time = function() return 1795122400 end
 ns.UI.show = function() end -- headless: no rendering
 char.selectedProf = profName
 ns.recalc()
 
 local st = ns.state
-local function money(c) c = math.floor((c or 0) + 0.5); return ("%dg%02ds%02dc"):format(c // 10000, (c // 100) % 100, c % 100) end
+local function money(c) c = math.floor((c or 0) + 0.5); if c < 0 then return "-" .. money(-c) end; return ("%dg%02ds%02dc"):format(c // 10000, (c // 100) % 100, c % 100) end
 print(("profession %s rank %d/%d line %s; options: budget=%s amount=%s range=%s gather=%s"):format(profName, rank, sk.max,
     tostring(sk.skillLine), tostring(opt.budget), tostring(opt.budgetAmount), tostring(opt.range), tostring(opt.gather)))
 print("locked: " .. tostring(st.committed ~= nil) .. "  target: " .. tostring(st.target))
@@ -86,6 +99,18 @@ if st.budget then print(("budget gold %s reach %s full %s limited %s fullCost %s
 print("ok=" .. tostring(res and res.ok))
 for _, s in ipairs(res and res.steps or {}) do
     print(("  %d-%d %s x%.0f cost %s learn %s"):format(s.fromSkill, s.toSkill, s.recipe.name, s.expectedCrafts, money(s.cost), money(s.learnCost)))
+end
+if os.getenv("PP_REPORT") and res and res.ok then -- machine-readable lines for tests/sweep.lua
+    print(("REPORT total=%d cash=%d learn=%d back=%d steps=%d last=%d"):format(math.floor(res.totalCost + 0.5),
+        math.floor(res.cash + 0.5), math.floor(res.learnTotal + 0.5), math.floor(res.sellBack + 0.5), #res.steps,
+        res.steps[#res.steps] and res.steps[#res.steps].toSkill or 0))
+    for _, sh in ipairs(res.shopping) do
+        print(("SHOP %d needed=%d owned=%d buy=%d src=%s cost=%d unit=%.2f"):format(sh.itemID, sh.needed, sh.owned,
+            sh.buy, tostring(sh.source), math.floor(sh.lineCost + 0.5), sh.unitCost or 0))
+    end
+    for _, s in ipairs(res.steps) do
+        print(("STEP %d %d %s crafts=%.2f"):format(s.fromSkill, s.toSkill, s.recipe.name, s.expectedCrafts))
+    end
 end
 if res and res.ok then
     print(("  cash %s + learn %s - sellBack %s = net %s"):format(money(res.cash), money(res.learnTotal), money(res.sellBack),

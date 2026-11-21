@@ -289,17 +289,29 @@ function R.trainersFor(profName, rankName)
         if seenTeaches or titleOk then
             local c, wx, wy = worldPos(loc.mapID, loc.x, loc.y)
             local dist = (pc and c == pc) and math.sqrt((wx - px) ^ 2 + (wy - py) ^ 2) or nil
-            local tier = seenTeaches and 0 or (need and (loc.cap or 0) >= need) and 1 or 2
-            list[#list + 1] = { loc = loc, dist = dist, tier = tier }
+            -- Trainers known to teach it (seen in game, or by title) come first, nearest first;
+            -- trainers of unknown rank after them.
+            local tier = (seenTeaches or (need and (loc.cap or 0) >= need)) and 0 or 1
+            list[#list + 1] = { loc = loc, dist = dist, tier = tier, seen = seenTeaches and true or false }
         end
     end
     table.sort(list, function(a, b)
         if a.tier ~= b.tier then return a.tier < b.tier end
         if (a.dist ~= nil) ~= (b.dist ~= nil) then return a.dist ~= nil end
         if a.dist and b.dist and a.dist ~= b.dist then return a.dist < b.dist end
+        if a.seen ~= b.seen then return a.seen end -- same distance: the one you saw teach it
         return (a.loc.zone or "") .. a.loc.npc < (b.loc.zone or "") .. b.loc.npc
     end)
     return list
+end
+
+-- Lowest trainer rank that can teach a recipe needing `skill`: a trainer teaches recipes below its
+-- cap (Journeyman, cap 150, up to skill 149; skill 150 needs an Expert). nil = any trainer.
+function R.rankForSkill(skill)
+    for _, rk in ipairs(R.RANKS) do
+        if (skill or 0) < rk.cap then return rk.name end
+    end
+    return R.RANKS[#R.RANKS].name
 end
 
 -- Best trainer: loc, distance.
