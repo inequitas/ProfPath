@@ -41,22 +41,34 @@ local function save()
     end
 end
 
--- Route points converted once to world yards: world.x / world.y arrays (Vector2D fields), world.instance.
+-- The active route in its map's 0-1 coordinates (world.x / world.y) and the map's size in yards (wYd, hYd).
 local world
 
+-- Yards between two points of a map (0-1 coordinates), measured through world positions. Only the
+-- distance is used, so it doesn't matter which world axis is north.
+local function mapYards(mapID, x1, y1, x2, y2)
+    local ok1, c1, a = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x1, y1))
+    local ok2, c2, b = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x2, y2))
+    if not (ok1 and ok2 and a and b) or c1 ~= c2 then return nil end
+    local ax, ay = a:GetXY()
+    local bx, by = b:GetXY()
+    return sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
+end
+
+-- The route in the zone map's own coordinates plus the map's size in yards. The player's position
+-- comes from the same map (GetPlayerMapPosition), so both share one frame: east = +x, south = +y.
+-- (Mixing UnitPosition with GetWorldPosFromMapPos swapped the axes and drew the minimap line in the
+-- wrong place.)
 local function buildWorld()
     world = nil
     if not current or not (C_Map and C_Map.GetWorldPosFromMapPos) or not CreateVector2D then return nil end
+    local wYd = mapYards(current.map, 0, 0.5, 1, 0.5)
+    local hYd = mapYards(current.map, 0.5, 0, 0.5, 1)
+    if not wYd or not hYd or wYd <= 0 or hYd <= 0 then return nil end
     local pts = current.route
     local n = math.floor(#pts / 2)
-    local w = { x = {}, y = {}, n = n }
-    for i = 1, n do
-        local ok, instance, pos = pcall(C_Map.GetWorldPosFromMapPos, current.map,
-            CreateVector2D(pts[i * 2 - 1] / 100, pts[i * 2] / 100))
-        if not ok or not pos then return nil end
-        w.instance = w.instance or instance
-        w.x[i], w.y[i] = pos.x, pos.y
-    end
+    local w = { x = {}, y = {}, n = n, wYd = wYd, hYd = hYd }
+    for i = 1, n do w.x[i], w.y[i] = pts[i * 2 - 1] / 100, pts[i * 2] / 100 end
     world = w
     return w
 end
@@ -266,16 +278,14 @@ local function clipDraw(ax, ay, bx, by, r)
     l:Show()
 end
 
-local function drawMini(pY, pX, facing, rotating)
+local function drawMini(px, py, facing, rotating)
     local zoom = Minimap:GetZoom() or 0
     local indoor = IsIndoors and IsIndoors() and true or false
     local diameter = (indoor and INDOOR or OUTDOOR)[zoom] or 300
     local radiusPx = Minimap:GetWidth() / 2
     local scale = radiusPx / (diameter / 2)
-    -- World axes: +x is north and +y is west (UnitPosition returns y first, then x).
-    -- So for a point (wx, wy) and the player (pX, pY):
-    --   north offset = wx - pX
-    --   east offset  = -(wy - pY)   (east is -y)
+    -- Map coordinates: +x is east, +y is south. Offsets in yards from the player (px, py):
+    --   east = (x - px) * map width, north = (py - y) * map height.
     -- A rotating minimap shows the player's facing at the top: rotate the offsets by -facing
     -- (facing is counter-clockwise from north), then scale yards to pixels.
     local ca, sa = 1, 0
@@ -284,8 +294,8 @@ local function drawMini(pY, pX, facing, rotating)
     end
     local n = world.n
     for i = 1, n do
-        local north = world.x[i] - pX
-        local east = -(world.y[i] - pY)
+        local east = (world.x[i] - px) * world.wYd
+        local north = (py - world.y[i]) * world.hYd
         sx[i] = (east * ca - north * sa) * scale
         sy[i] = (east * sa + north * ca) * scale
     end
@@ -324,8 +334,10 @@ local function miniUpdate(_, dt)
         hideMini()
         return
     end
-    local pY, pX, _, instance = UnitPosition("player")
-    if not pY or instance ~= w.instance then
+    local pos = C_Map.GetPlayerMapPosition and C_Map.GetPlayerMapPosition(current.map, "player")
+    local px, py
+    if pos then px, py = pos:GetXY() end
+    if not px or (px == 0 and py == 0) then -- not on this map (or no position, e.g. in an instance)
         hideMini()
         dirty = true
         return
@@ -334,15 +346,20 @@ local function miniUpdate(_, dt)
     local facing = rotating and GetPlayerFacing and GetPlayerFacing() or 0
     local zoom = Minimap:GetZoom()
     local indoor = IsIndoors and IsIndoors() and true or false
-    local dx, dy = pX - (lastX or 1e9), pY - (lastY or 1e9)
+    local dx, dy = (px - (lastX or 1e9)) * w.wYd, (py - (lastY or 1e9)) * w.hYd -- yards moved
     if not dirty and dx * dx + dy * dy <= 1 and zoom == lastZoom and indoor == lastIndoor
         and (not rotating or math.abs(facing - (lastFacing or 0)) < 0.005) then
         return
     end
     dirty = false
-    lastX, lastY, lastFacing, lastZoom, lastIndoor = pX, pY, facing, zoom, indoor
-    drawMini(pY, pX, facing, rotating)
+    lastX, lastY, lastFacing, lastZoom, lastIndoor = px, py, facing, zoom, indoor
+    drawMini(px, py, facing, rotating)
 end
+
+--@debug@
+-- Test hook (tests/minimap_spec.lua): run one minimap update.
+function Map._tick(dt) miniUpdate(nil, dt) end
+--@end-debug@
 
 local function setupMini()
     if mini then return end
@@ -519,6 +536,25 @@ function Map.slash(arg)
             legend[#legend + 1] = ("|cff%02x%02x%02x%d-%d|r"):format(p[1] * 255, p[2] * 255, p[3] * 255, b.from, b.to)
         end
         say(("Showing all %d %s routes on the world map: %s. /pp route none clears them."):format(count, kind, table.concat(legend, " ")))
+        return true
+    elseif arg == "check" then
+        -- Test: an L next to you, in any zone: 120 yd north, back, then 60 yd east. On the minimap
+        -- (not rotating) the long arm must point up and the short arm right, as on the world map.
+        local mapID = C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+        local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+        if not pos then say("No map position here (instance?).") return true end
+        local px, py = pos:GetXY()
+        current = { map = mapID, label = "minimap check", open = true, spots = {}, route = {} }
+        world = nil
+        local w = buildWorld()
+        if not w then say("Couldn't measure this map.") current = nil return true end
+        local n, e = 120 / w.hYd, 60 / w.wYd -- map units for 120 yd north and 60 yd east
+        current.route = { px * 100, py * 100, px * 100, (py - n) * 100, px * 100, py * 100, (px + e) * 100, py * 100 }
+        world = nil
+        refresh()
+        say(("Check shape at %.1f, %.1f: a long arm 120 yd north and a short arm 60 yd east of you. "
+            .. "On the minimap (with rotation off) the long arm should point up and the short one right, "
+            .. "and both should match the world map. /pp route off clears it."):format(px * 100, py * 100))
         return true
     elseif arg == "none" then
         wipe(extra)
