@@ -389,7 +389,7 @@ end
 -- Where to go: the remembered trainer (name, zone, coordinates) with a Waypoint button.
 local function trainerHint(profName, rankName, x0, anyTrainer)
     x0 = x0 or 62
-    local list = ns.Recipes.trainersFor(profName, rankName)
+    local list = ns.Recipes.trainersFor(profName, rankName, anyTrainer)
     local best = list[1]
     if not best then
         text("GameFontHighlightSmall", x0, y + 5, CONTENT - x0 - 8,

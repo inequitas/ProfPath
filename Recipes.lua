@@ -279,12 +279,14 @@ end
 --     trainers whose title shows a lower rank are left out;
 --   * nearest on your continent first, then everything else.
 -- Returns a list of { loc, dist } (dist in yards, nil if on another continent or unknown).
-function R.trainersFor(profName, rankName)
+function R.trainersFor(profName, rankName, forRecipe)
     local need = rankName and RANK_CAP[rankName]
     local pc, px, py = playerWorldPos()
     local list = {}
     for _, loc in ipairs(knownTrainers(profName)) do
-        local seenTeaches = rankName and loc.ranks and loc.ranks[rankName]
+        -- forRecipe: a trainer seen offering the rank training need not teach that rank's recipes
+        -- (a Journeyman trainer can list Expert), so only its title counts.
+        local seenTeaches = rankName and not forRecipe and loc.ranks and loc.ranks[rankName]
         local titleOk = not need or (loc.cap or 0) == 0 or loc.cap >= need
         if seenTeaches or titleOk then
             local c, wx, wy = worldPos(loc.mapID, loc.x, loc.y)

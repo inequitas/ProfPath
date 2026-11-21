@@ -177,6 +177,11 @@ local function recalcNow()
     if commit and (prof.rank or 0) >= commit.target then -- target reached: done, start fresh
         c.commit[prof.name], c.stock[prof.name], commit, stock = nil, nil, nil, nil
     end
+    -- "How far ahead" changed since the plan was locked (or it was locked before this was stored):
+    -- plan fresh to the new end point. The starting stock stays.
+    if commit and (commit.range ~= (opt.range or false) or commit.fixed ~= (opt.target or false)) then
+        c.commit[prof.name], commit = nil, nil
+    end
     local free = {}
     if opt.ownedFree then
         free = have                         -- option: everything in the bags counts as free
@@ -315,7 +320,9 @@ function ns.commitPlan(useResult)
         ids[s.recipe.id] = true
         steps[#steps + 1] = { s.fromSkill, s.toSkill, s.recipe.id } -- skill range -> recipe
     end
-    c.commit[prof.name] = { ids = ids, steps = steps, target = res.steps[#res.steps].toSkill, t = time() }
+    local opt = ProfPathDB.options
+    c.commit[prof.name] = { ids = ids, steps = steps, target = res.steps[#res.steps].toSkill, t = time(),
+        range = opt.range or false, fixed = opt.target or false } -- what "how far ahead" was when locked
     if not c.stock[prof.name] then -- keep the existing stock when switching paths
         local stock = {}
         for id, n in pairs(state.haveNow or {}) do stock[id] = n end
