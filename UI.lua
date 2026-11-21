@@ -312,6 +312,9 @@ local function button(label, x, w, onClick)
     local b = take("button", function() return CreateFrame("Button", nil, UI.child, "UIPanelButtonTemplate") end)
     b:SetPoint("TOPLEFT", x, -y)
     b:SetSize(w, 24)
+    -- Above row click areas (clickable), which are pooled too: without a fixed level, whichever frame
+    -- was created last sits on top and a row could swallow its own "Show route" click.
+    b:SetFrameLevel((UI.child:GetFrameLevel() or 0) + 3)
     b:SetText(label)
     b:SetScript("OnClick", onClick)
     return b
@@ -325,6 +328,7 @@ local function clickable(h, onClick)
     end)
     b:SetPoint("TOPLEFT", 0, -y)
     b:SetSize(CONTENT, h)
+    b:SetFrameLevel((UI.child:GetFrameLevel() or 0) + 1)
     b:SetScript("OnClick", onClick)
 end
 
