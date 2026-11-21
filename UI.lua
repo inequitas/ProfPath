@@ -724,12 +724,20 @@ local function zoneList(prof, kind)
         end
     end
     table.sort(mains, function(a, b) if a.score ~= b.score then return a.score < b.score end return a.i < b.i end)
+    do -- one row per zone (a zone can be in two skill ranges): keep the better-ranked one
+        local seen, kept = {}, {}
+        for _, m in ipairs(mains) do
+            if not seen[m.z.area] then seen[m.z.area] = true; kept[#kept + 1] = m end
+        end
+        mains = kept
+    end
     -- Up to 4 zones; a zone's hot spots (mines, dense clusters) appear under it once its route is shown.
     -- The most reachable zone is shown; the others sit in a closed "Other viable zones" list.
     -- Hot spots are one info line per zone (they're drawn in yellow with the zone's route).
+    -- Compact rows: name and a one-line summary; click the name for the details.
+    UI.zoneOpen = UI.zoneOpen or {}
     local rows = {}
     local function addZone(m)
-        rows[#rows + 1] = { z = m.z, note = m.note, extra = m.extra }
         local n, caves = 0, {}
         for _, o in ipairs(band.zones) do
             if o.hotspot and o.area == m.z.area then
@@ -739,12 +747,7 @@ local function zoneList(prof, kind)
                 end
             end
         end
-        if n > 0 then
-            local t = ("%d hot spot%s nearby (mines, dense clusters): yellow on the map when you show this route")
-                :format(n, n > 1 and "s" or "")
-            if #caves > 0 then t = t .. ". " .. table.concat(caves, "; ") end
-            rows[#rows + 1] = { info = t }
-        end
+        rows[#rows + 1] = { z = m.z, note = m.note, extra = m.extra, spots = n, caves = caves }
     end
     if mains[1] then addZone(mains[1]) end
     if #mains > 1 then
@@ -753,10 +756,7 @@ local function zoneList(prof, kind)
     end
     for _, row in ipairs(rows) do
         local z = row.z
-        if row.info then
-            local f = text("GameFontDisableSmall", 26, y, CONTENT - 40, row.info, "LEFT", true)
-            y = y + f:GetStringHeight() + 8
-        elseif row.toggle then
+        if row.toggle then
             button((UI.zonesOpen and "- " or "+ ") .. ("Other viable zones (%d)"):format(row.count), 10, 220, function()
                 UI.zonesOpen = not UI.zonesOpen
                 UI.show(lastState)
@@ -764,25 +764,22 @@ local function zoneList(prof, kind)
             y = y + 30
         else
             local zone = ns.Zones and ns.Zones[z.area]
-            local name = z.hotspot and (z.cave and ((z.name or "Cave or mine") .. " (cave, ore inside)") or "Hot spot (dense cluster)")
-                or (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
-            local bits = {}
-            local covered = z.nodes and z.share and math.floor(z.nodes * z.share + 0.5)
-            if z.len and not z.hotspot then bits[#bits + 1] = ("loop %.1f km"):format(z.len / 1000) end
-            if covered then bits[#bits + 1] = covered .. (kind == "skinning" and " beast spawns" or " nodes") end
-            if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
-            if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
-            if row.note then bits[#bits + 1] = row.note end
-            if row.extra then bits[#bits + 1] = "|cffff8040" .. row.extra .. "|r" end
-            if z.mobs and #z.mobs > 0 then bits[#bits + 1] = "skin: " .. table.concat(z.mobs, ", ") end
-            if z.hotspot and z.cave and z.entrance then
-                bits[#bits + 1] = ("entrance at %.0f, %.0f"):format(z.entrance[1], z.entrance[2])
+            local name = (zone and zone[2] or ("zone " .. z.area)) .. (z.variant and (" (" .. z.variant .. ")") or "")
+            local key = band.from .. ":" .. z.area
+            local open = UI.zoneOpen[key]
+            -- summary: loop length, how far, and one short warning when it matters
+            local sum = {}
+            if z.len then sum[#sum + 1] = ("%.1f km loop"):format(z.len / 1000) end
+            if row.note then sum[#sum + 1] = (row.note:gsub(" %(boat or zeppelin%)", "")) end
+            if row.extra then
+                sum[#sum + 1] = row.extra:find("above") and "|cffff8040above your level|r" or "|cffffd100easier beasts|r"
             end
-            -- Name on the first line, details on a smaller second line (one line was cut off).
-            local x0 = z.hotspot and 26 or 10
-            text(z.hotspot and "GameFontHighlightSmall" or "GameFontHighlight", x0, y + 1, CONTENT - 150 - x0, name)
-            local details = text("GameFontDisableSmall", x0, y + 16, CONTENT - 150 - x0, table.concat(bits, "  -  "), "LEFT", true)
-            local rowH = math.max(34, 16 + (details.GetStringHeight and details:GetStringHeight() or 12) + 6)
+            clickable(32, function()
+                UI.zoneOpen[key] = not open or nil
+                UI.show(lastState)
+            end)
+            text("GameFontHighlight", 10, y + 1, CONTENT - 160, (open and "- " or "+ ") .. name)
+            text("GameFontDisableSmall", 22, y + 17, CONTENT - 172, table.concat(sum, "  -  "))
             if z.route and ns.Map then
                 local isActive = active and active.map == z.map and active.route and active.route[1] == z.route[1] and active.route[2] == z.route[2]
                 button(isActive and "Hide route" or "Show route", CONTENT - 134, 128, function()
@@ -790,26 +787,79 @@ local function zoneList(prof, kind)
                         ns.Map.clear()
                     else
                         local spots = {}
-                        if not z.hotspot then
-                            for _, o in ipairs(band.zones) do if o.hotspot and o.area == z.area then spots[#spots + 1] = o end end
-                        end
+                        for _, o in ipairs(band.zones) do if o.hotspot and o.area == z.area then spots[#spots + 1] = o end end
                         ns.Map.show(z, ("%s %d-%d: %s"):format(label, band.from, band.to, name), spots)
                         ns.Map.waypoint()
                         if ns.Map.openMap then ns.Map.openMap() end
                         print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set)%s. /pp route off hides it.")
                             :format(name, #spots > 0 and (", with %d hot spot%s in yellow on the world map"):format(#spots, #spots > 1 and "s" or "") or ""))
-                        if z.cave and z.entrance then
-                            print(("|cff33ccffProfPath|r: this is a cave or mine. The waypoint (green dot on the map) is its entrance at %.0f, %.0f; the ore is inside, so follow the cave tunnels.")
-                                :format(z.entrance[1], z.entrance[2]))
-                        end
                     end
                     UI.show(lastState)
                 end)
             end
-            y = y + rowH
+            y = y + 34
+            if open then
+                -- details: everything else about this zone
+                local d = {}
+                if z.mobs and #z.mobs > 0 then d[#d + 1] = "Beasts: " .. table.concat(z.mobs, ", ") .. "." end
+                local covered = z.nodes and z.share and math.floor(z.nodes * z.share + 0.5)
+                if covered then d[#d + 1] = ("%d %s along the loop."):format(covered, kind == "skinning" and "beast spawns" or "nodes") end
+                if row.extra then d[#d + 1] = row.extra:sub(1, 1):upper() .. row.extra:sub(2) .. "." end
+                if z.guide then d[#d + 1] = "Recommended by the WoW: Forever guides." end
+                if z.side == "C" then d[#d + 1] = "Contested zone: watch for the other faction." end
+                if row.spots > 0 then
+                    d[#d + 1] = ("%d hot spot%s nearby (mines, dense clusters), drawn in yellow with the route."):format(row.spots, row.spots > 1 and "s" or "")
+                end
+                for _, c in ipairs(row.caves) do d[#d + 1] = c .. "." end
+                local f = text("GameFontHighlightSmall", 22, y - 2, CONTENT - 30, table.concat(d, " "), "LEFT", true)
+                y = y + (f.GetStringHeight and f:GetStringHeight() or 12) + 8
+            end
         end
     end
     y = y + 4
+end
+
+-- Do it tab for gathering professions: a short action card instead of the Plan tab's full advice.
+local function gatherCard(prof, kind, state)
+    local rank, max = prof.rank or 0, prof.max or 0
+    local bands = ns.Routes and ns.Routes[kind] or {}
+    local band, nextBand
+    for i, b in ipairs(bands) do
+        if rank >= b.from and rank < b.to then band, nextBand = b, bands[i + 1]; break end
+    end
+    -- skill bar to the end of this range
+    local top = band and math.min(band.to, max > 0 and max or band.to) or max
+    tex(nil, 0, y, CONTENT, 64, 0.2, 0.5, 1, 0.15)
+    tex(nil, 0, y, 4, 64, 0.25, 0.8, 0.35, 1)
+    text("GameFontNormalLarge", 14, y + 8, CONTENT - 20, ("%s %d"):format(ns.Gather.label[kind] or kind, rank))
+    local barY = y + 36
+    local from = band and band.from or 0
+    local frac = math.max(0, math.min(1, (rank - from) / math.max(1, top - from)))
+    tex(nil, 14, barY, CONTENT - 28, 14, 0, 0, 0, 0.5)
+    if frac > 0 then tex(nil, 14, barY, (CONTENT - 28) * frac, 14, 0.25, 0.6, 1, 0.9) end
+    text("GameFontHighlightSmall", 14, barY + 1, CONTENT - 28, ("Skill %d / %d"):format(rank, top), "CENTER")
+    y = y + 74
+    -- your route: the one shown, or the best zone from the Plan tab
+    local active = ns.Map and ns.Map.active and ns.Map.active()
+    if active then
+        para(("|cffffd100Following:|r %s. Ride the loop; tracked nodes and beasts show on the minimap."):format(active.label or "your route"))
+        button("Hide route", 4, 160, function() ns.Map.clear(); UI.show(state) end)
+        button("Open map", 172, 160, function() if ns.Map.openMap then ns.Map.openMap() end end)
+        y = y + 32
+    elseif band and #(band.zones or {}) > 0 then
+        para("|cffffd100No route shown yet.|r Pick a zone and show its route on the Plan tab.")
+        button("Plan tab: pick a zone", 4, 200, function() UI.setTab(2) end)
+        y = y + 32
+    end
+    -- what's next
+    local nxt = {}
+    if band and nextBand and band.to <= max then
+        nxt[#nxt + 1] = ("At %d the best zones change (Plan tab shows them)."):format(band.to)
+    end
+    if max > 0 and max < 300 and rank >= max - 25 then
+        nxt[#nxt + 1] = ("Your cap is %d: train the next rank at a trainer to keep leveling."):format(max)
+    end
+    if #nxt > 0 then para("|cffffd100Next:|r " .. table.concat(nxt, " ")) end
 end
 
 -- What to gather at your skill, as one paragraph.
@@ -1018,7 +1068,7 @@ local function renderDo(state)
         if kind then
             stepTitle(3, "Go gathering", (ns.Gather.label[kind] or "This profession")
                 .. " levels by gathering: nothing to buy or craft right now.")
-            gatherNote(prof)
+            gatherCard(prof, kind, state)
             return
         end
         stepTitle(3, "Nothing to do yet", "Finish Prepare and check the Plan first.")
