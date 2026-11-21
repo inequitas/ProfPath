@@ -1,21 +1,35 @@
 name: Release
 
-# Builds the addon zip and uploads it to CurseForge (WoW Forever) and to a GitHub
-# release when a version tag is pushed.
+# Builds the addon zip and uploads it to CurseForge and Wago (WoW Forever) and to a
+# GitHub release when a version tag is pushed. GitHub is the source; the stores
+# get their files from here.
 #
 # To release: merge beta into main, raise "## Version:" in ProfPath.toc, commit,
 # then tag that commit on main and push the tag:
-#   git tag -s v0.1.1 -m "ProfPath 0.1.1"
-#   git push origin v0.1.1
+#   git tag -s v0.2.1 -m "ProfPath 0.2.1"
+#   git push origin v0.2.1
 #
-# Needs the repository secret CF_API_KEY (a CurseForge API token). The project
-# comes from "## X-Curse-Project-ID" in ProfPath.toc and the game version from
-# "## Interface: 16001"; .pkgmeta keeps tools, tests and notes out of the zip.
+# Needs the repository secrets CF_API_KEY (CurseForge API token) and
+# WAGO_API_TOKEN (Wago API key). The projects come from "## X-Curse-Project-ID"
+# and "## X-Wago-ID" in ProfPath.toc, the game version from "## Interface:";
+# .pkgmeta keeps tools, tests and notes out of the zip.
+#
+# Run manually ("Run workflow") with a tag and "wago only" to send an existing
+# release to Wago without uploading it to CurseForge or GitHub again.
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v0.2.0)"
+        required: true
+      wago_only:
+        description: "Upload to Wago only"
+        type: boolean
+        default: true
 
 # contents: write is needed to create the GitHub release; nothing else.
 permissions:
@@ -23,6 +37,7 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history, for the changelog)
@@ -34,4 +49,35 @@ jobs:
         uses: BigWigsMods/packager@v2
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+  republish:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      # -a passes the Wago project ID, for tags made before it was in the toc.
+      # Without CF_API_KEY / GITHUB_OAUTH the packager skips those uploads.
+      - name: Package and upload to Wago
+        if: inputs.wago_only
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -a rNkgrBNa
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+
+      - name: Package and upload everywhere
+        if: ${{ !inputs.wago_only }}
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -a rNkgrBNa
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
