@@ -1138,6 +1138,16 @@ local function renderDo(state)
         local perCraft = st.cash / st.expectedCrafts
         if st.cash > avail and perCraft > 0 then
             batchCrafts = math.max(1, math.min(crafts, floor(avail / perCraft)))
+            -- If your bags already hold (nearly) a full batch, that is the batch: don't ask you to buy
+            -- for one or two more crafts because a little gold freed up (e.g. after learning the recipe).
+            local covered
+            for _, rg in ipairs(r.reagents or {}) do
+                local n = floor(bagCount(rg[1]) / rg[2])
+                covered = covered and math.min(covered, n) or n
+            end
+            if covered and covered > 0 and covered >= floor(batchCrafts * 0.85) then
+                batchCrafts = math.min(crafts, covered)
+            end
             if batchCrafts >= crafts then batchCrafts = nil end
         end
     end
