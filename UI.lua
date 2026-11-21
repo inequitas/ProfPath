@@ -1151,16 +1151,9 @@ local function renderDo(state)
             local c = ns.Recipes.char()
             c.batch = c.batch or {}
             local key = r.id .. ":" .. st.fromSkill
-            local rec = c.batch[key]
-            if rec and rec.ready and covered == 0 then rec = nil end -- batch used up: size the next one
-            if not rec then
-                -- bags already hold (nearly) a full batch: that's the batch
-                local n = (covered > 0 and covered >= floor(fresh * 0.85)) and covered or fresh
-                rec = { n = n }
-                c.batch[key] = rec
-            end
-            if covered >= rec.n then rec.ready = true end
-            batchCrafts = rec.ready and math.max(1, math.min(crafts, covered)) or math.min(crafts, rec.n)
+            local rec
+            batchCrafts, rec = ns.Optimizer.batchSize(c.batch[key], fresh, covered, crafts)
+            c.batch[key] = rec
             if batchCrafts >= crafts then batchCrafts = nil end
         end
     end

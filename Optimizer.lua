@@ -452,6 +452,25 @@ function O.remaining(recipe, crafts, intermediates, bagCount)
     return short, used, craftsLeft
 end
 
+-- ---------- batch size (batch mode, Do it tab) ----------
+-- A batch is fixed once set. rec (remembered per step, or nil), fresh = crafts the gold allows now
+-- (learn cost included), covered = crafts the bags hold materials for, crafts = crafts left in the
+-- step. Returns crafts for this batch and the updated rec:
+--   * new batch: sized from the gold, or adopts the bags if they already hold >= 85% of that;
+--   * while buying (not all in the bags yet): the same size, so the list shows what's missing;
+--   * once all bought: what the bags cover, counting down as you craft;
+--   * used up (bags empty again): the next batch is sized fresh.
+function O.batchSize(rec, fresh, covered, crafts)
+    if rec and rec.ready and covered == 0 then rec = nil end
+    if not rec then
+        local n = (covered > 0 and covered >= math.floor(fresh * 0.85)) and covered or fresh
+        rec = { n = n }
+    end
+    if covered >= rec.n then rec.ready = true end
+    local size = rec.ready and math.max(1, math.min(crafts, covered)) or math.min(crafts, rec.n)
+    return size, rec
+end
+
 -- ---------- fitting a plan to the gold you have ----------
 -- Finds the furthest skill (<= target) reachable within `budget`, with the cheapest plan to get there.
 -- mode "batch":   counts the net cost (gold spent minus what vendoring the crafted items returns), as

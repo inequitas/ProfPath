@@ -10,12 +10,14 @@ Made for **WoW: Forever**.
 
 ## What's new
 
-**v0.1.1: Tools, cooldowns and specializations** *(2026-11-17)*
+**v0.2.0: Gathering routes, skinning, fishing and a smarter planner** *(2026-11-21)*
 
-- **Required tools:** enchanting rods, the Blacksmith Hammer, Arclight Spanner, Gyromatic Micro-Adjustor and Philosopher's Stone are now known. If you don't carry one, the plan includes the cheapest way to get it, and the Do it list tells you to get it.
-- **Specialization recipes** (Tribal, Dragonscale and Elemental Leatherworking, Armorsmith, Weaponsmith, Gnomish and Goblin Engineering) are only suggested if you have that specialization.
-- **Long cooldowns:** transmutes, Mooncloth and similar recipes are no longer used as leveling steps.
-- **Starter recipes** that come with a profession are known right away.
+- **Gathering routes** for Mining, Herbalism and Skinning: where to go for your skill, and a compact loop on the world map and minimap that stays on walkable ground, goes around lakes and avoids enemy towns and dangerous camps. Closest zones (and ones with a known flight path) come first.
+- **Skinning by level:** beasts that suit your skill and your character level, listed by name.
+- **Hot spots and caves:** mines and dense clusters near a route; cave waypoints go to the entrance.
+- **Fishing advice:** what to do at your skill, lures, and waypoints to Old Man Heming and Nat Pagle.
+- **Smarter planner:** owned items only cover the units you have, batches stay fixed while you craft, and recalculating no longer freezes the game.
+- **Crafting stations** are named, and **non-English game clients** are supported.
 
 Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/main/CHANGELOG.md).
 
@@ -37,6 +39,8 @@ Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/m
   and offers a cheaper path if prices change. It never switches by itself.
 - **Rank-ups and trainers:** it tells you when you can train Expert or Artisan, and points you to the
   nearest trainer who teaches it, with a map waypoint (TomTom is used if you have it).
+- **Gathering routes** for Mining, Herbalism and Skinning: the best zones for your skill (closest first), with a
+  compact loop on the world map and minimap, hot spots and cave entrances. Fishing gets advice per skill.
 - **Minimap button** to open it, with your current step in the tooltip.
 
 ## How to use it
@@ -53,6 +57,8 @@ Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/m
 | `/pp budget 2g` / `mine` / `off` | plan with a set budget, the gold in your bags, or ignore gold |
 | `/pp range 30` / `all` | how far ahead to plan |
 | `/pp effort 25` | extra cost per craft, if you prefer fewer crafts |
+| `/pp route off` | hide the gathering route and its waypoint |
+| `/pp gather off` / `on` | gather materials nobody sells yourself (needs the gathering profession) |
 | `/pp minimap on` / `off` | show or hide the minimap button |
 | `/pp about` | version and credits |
 
@@ -62,8 +68,10 @@ Questions or feedback: [Discord](https://discord.com/users/120143105952317440) o
 
 ## Credits
 
-- **Trainer locations:** [Wowhead](https://www.wowhead.com/forever) (WoW: Forever database and world map).
-- **Recipe data** (skill-up colours, reagents, recipe items): read from the game's own data files via
+- **Trainer, ore, herb and creature locations:** [Wowhead](https://www.wowhead.com/forever) (WoW: Forever database).
+- **Gathering zones** follow the WoW: Forever guides on [Wowhead](https://www.wowhead.com/forever) and
+  [wow-professions.com](https://www.wow-professions.com/forever); the routes themselves are computed by ProfPath.
+- **Recipe data and terrain** (skill-up colours, reagents, recipe items, height maps): read from the game's own data files via
   [wago.tools](https://wago.tools).
 
 ## Notes

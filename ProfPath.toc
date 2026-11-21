@@ -2,10 +2,10 @@
 ## Title: ProfPath
 ## Notes: Cheapest profession leveling path from live auction prices.
 ## Author: inequitas
-## Version: 0.1.1
+## Version: 0.2.0
 ## X-License: MIT
 ## X-Curse-Project-ID: 1812869
-## X-Credits: Trainer locations from Wowhead (wowhead.com). Recipe data from the game files via wago.tools.
+## X-Credits: Trainer, node and creature locations from Wowhead (wowhead.com). Recipe data and terrain from the game files via wago.tools. Gathering zones follow the WoW: Forever guides on Wowhead and wow-professions.com.
 ## X-Category: Professions
 ## SavedVariables: ProfPathDB
 ## IconTexture: Interface\AddOns\ProfPath\Media\icon

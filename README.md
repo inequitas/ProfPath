@@ -20,15 +20,17 @@ minimap button: **Prepare → Plan → Do it**. Run `/pp help` for all commands.
 
 ## What's new
 
-**[v0.1.1](https://github.com/inequitas/ProfPath/releases/tag/v0.1.1): Tools, cooldowns and specializations** *(2026-11-17)*
+**[v0.2.0](https://github.com/inequitas/ProfPath/releases/tag/v0.2.0): Gathering routes, skinning, fishing and a smarter planner** *(2026-11-21)*
 
-- **Required tools:** enchanting rods, the Blacksmith Hammer, Arclight Spanner, Gyromatic Micro-Adjustor and
-  Philosopher's Stone are now known. If you don't carry one, the plan includes the cheapest way to get it,
-  and the Do it list tells you to get it.
-- **Specialization recipes** (Tribal, Dragonscale and Elemental Leatherworking, Armorsmith, Weaponsmith,
-  Gnomish and Goblin Engineering) are only suggested if you have that specialization.
-- **Long cooldowns:** transmutes, Mooncloth and similar recipes are no longer used as leveling steps.
-- **Starter recipes** that come with a profession are known right away.
+- **Gathering routes** for Mining, Herbalism and Skinning: where to go for your skill, and a compact
+  loop on the world map and minimap that stays on walkable ground, goes around lakes and avoids enemy
+  towns and dangerous camps. Closest zones (and ones with a known flight path) come first.
+- **Skinning by level:** beasts that suit your skill and your character level, listed by name.
+- **Hot spots and caves:** mines and dense clusters near a route; cave waypoints go to the entrance.
+- **Fishing advice:** what to do at your skill, lures, and waypoints to Old Man Heming and Nat Pagle.
+- **Smarter planner:** owned items only cover the units you have, batches stay fixed while you craft,
+  and recalculating no longer freezes the game.
+- **Crafting stations** are named, and **non-English game clients** are supported.
 
 Earlier versions and full details: [CHANGELOG.md](CHANGELOG.md).
 
@@ -58,8 +60,9 @@ release. It needs the repository secret `CF_API_KEY` (a CurseForge API token).
 
 ## Credits
 
-- Trainer locations: [Wowhead](https://www.wowhead.com/forever).
-- Recipe data: the game's data files via [wago.tools](https://wago.tools).
+- Trainer, ore, herb and creature locations: [Wowhead](https://www.wowhead.com/forever).
+- Recipe data and terrain: the game's data files via [wago.tools](https://wago.tools).
+- Gathering zones follow the WoW: Forever guides on Wowhead and [wow-professions.com](https://www.wow-professions.com/forever).
 
 ## License
 

@@ -1,15 +1,22 @@
 # Changelog
 
-## v0.2.0: Gathering, crafting stations and other languages *(unreleased)*
+## v0.2.0: Gathering routes, skinning, fishing and a smarter planner *(2026-11-21)*
 
 **Added**
-- **Gather it yourself.** When nobody sells a material on the auction house and you have the gathering profession for it (Mining, Herbalism or Skinning, with enough skill), the plan has you gather it instead of giving up. It counts at its vendor price and costs no gold; the Do it list says "Gather" instead of "Buy". Turn it off with `/pp gather off`.
-- **Mining, Herbalism, Skinning and Fishing.** These level by gathering, which no shopping list can cover. Instead of "Not enough gold", the Plan and Do it tabs now say there is nothing to buy and what to gather at your skill: the ore route for Mining (Copper, Tin, Iron, Mithril, Thorium), the best herbs for you and the next ones you unlock for Herbalism, the highest creature level you can skin for Skinning, and tips for Fishing. Smelting steps use ore you mine yourself when the auction house has none.
-- **Gathering routes.** For Mining and Herbalism, the Plan tab lists the best zones for your skill and faction (Wowhead's Forever guide picks first, then the zones with the most nodes you can use) with a **Show route** button. It draws a loop on the world map and the minimap that passes within 120 yards of every node it covers, close enough for Find Minerals or Find Herbs to show them, and sets a waypoint to the nearest point of the loop. Skinning and Fishing get the zone lists. Routes are planned ahead from Wowhead's WoW: Forever node locations and only step between nearby nodes, so they don't cut across mountains. `/pp route off` hides the route; `/pp route test` shows one without the profession.
-- **Crafting stations.** Steps that need an anvil, forge, cooking fire, loom, tanning rack or other station say so, in the plan and on the Do it craft card.
+- **Gathering routes for Mining, Herbalism and Skinning.** The Plan tab suggests where to go for your skill and shows a compact, repeatable loop on the world map and minimap (Show route opens the map on that zone and sets a waypoint; Hide route removes both). Routes are planned from WoW: Forever's own node and creature locations and terrain: they stay on walkable ground, go around lakes, and keep away from enemy towns and dangerous camps. Zone choices follow the WoW: Forever leveling guides.
+- **Closest zones first.** Zones are ordered by how easy they are to reach from where you are; flight paths you know count as close (ProfPath learns them when you open a flight master). The best zone is shown; the others sit under "Other viable zones". Click a zone for its details.
+- **Hot spots and caves.** Mines and dense clusters near a route are drawn in yellow with it; for known caves (such as Azurelode Mine) the waypoint goes to the entrance.
+- **Skinning by level.** Skinning routes pick beasts that suit your skill and your character level, and list them by name and level.
+- **Fishing advice.** What to do at your skill, which lure to use, and waypoints to Old Man Heming (Expert book, Booty Bay) and Nat Pagle (Artisan quest, Dustwallow Marsh).
+- **Gather it yourself.** When nobody sells a material and you have the gathering profession for it, the plan has you gather it. `/pp gather off` turns this off.
+- **Crafting stations.** Steps that need an anvil, forge, cooking fire or other station say so.
+- **Do it card for gathering professions:** your skill, the route you're following, and what's next.
 
 **Fixed**
-- **Non-English game clients.** Recipe names now show in your game's language, trainer recipe costs are matched in any language, and Expert and Artisan rank-ups are recognized at trainers in any language.
+- **Owned items no longer make a whole route look free.** Items in your bags only cover the units you have. Before, a few owned Medium Leather could make Leatherworking pick an expensive route (9g instead of almost free).
+- **Batches stay fixed.** In batch mode a batch keeps its size once set (learning the recipe no longer grows it), counts down as you craft, and the next one is sized when it's used up.
+- **No more freezing while it recalculates.** Planning runs in small slices with a "Calculating your plan" overlay, so the game keeps running.
+- **Non-English game clients.** Recipe names show in your language, and trainer costs and rank-ups are recognised in any language.
 
 **Changed**
 - Recipe data updated for game build 1.60.1.70959 (no recipe changes).

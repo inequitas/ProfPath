@@ -328,6 +328,30 @@ test("a few free units of a raw material don't make crafting the intermediate lo
     end
 end)
 
+test("batch: fixed once set, learning the recipe doesn't grow it, counts down, then resizes", function()
+    -- Real case: 5g budget, 15s learn cost -> 12 crafts; after learning, the gold would allow 13.
+    local size, rec = O.batchSize(nil, 12, 0, 92)        -- nothing bought yet
+    eq(size, 12, "first batch from the gold")
+    size, rec = O.batchSize(rec, 12, 5, 92)               -- bought part of it
+    eq(size, 12, "while buying: same batch, list shows the rest")
+    size, rec = O.batchSize(rec, 12, 12, 92)              -- all bought
+    eq(size, 12, "all in the bags")
+    size, rec = O.batchSize(rec, 13, 12, 92)              -- learned the recipe: gold allows 13 now
+    eq(size, 12, "learning the recipe doesn't grow the batch")
+    size, rec = O.batchSize(rec, 13, 7, 87)               -- crafted 5
+    eq(size, 7, "counts down while crafting, nothing to buy")
+    size, rec = O.batchSize(rec, 13, 0, 80)               -- batch used up (vendored)
+    eq(size, 13, "next batch sized fresh")
+    eq(rec.ready, nil, "and not bought yet")
+end)
+
+test("batch: bags already holding nearly a full batch are adopted", function()
+    local size = O.batchSize(nil, 13, 12, 92)             -- your state after the update
+    eq(size, 12)
+    size = O.batchSize(nil, 13, 4, 92)                    -- a few leftovers: normal batch
+    eq(size, 13)
+end)
+
 test("owned materials are free", function()
     local recipes = {
         R{ id = 1, yellow = 50, gray = 60, reagents = { { 100, 1 } } },

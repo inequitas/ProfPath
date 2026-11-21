@@ -487,7 +487,7 @@ local HELP = {
     "/profpath budget off|batch|upfront|<amount>|mine - fit the plan to your gold or a set amount like 1g50s (now %s); /profpath reserve <gold> keeps some aside",
     "/profpath gather on|off - gather materials nobody sells yourself, if you have the gathering profession (now %s)",
     "/profpath scan - scan AH prices for this profession (auction house must be open)",
-    "/profpath api | probe - dump client API info to SavedVariables (for development)",
+    "/profpath route off - hide the gathering route and its waypoint (Show route on the Plan tab shows one)",
 }
 
 SLASH_PROFPATH1 = "/profpath"
@@ -497,10 +497,12 @@ SlashCmdList.PROFPATH = function(msg)
     local opt = ProfPathDB.options
     if cmd == "" then
         ns.UI.toggle()
-    elseif cmd == "api" then
+    --@debug@
+    elseif cmd == "api" then -- developer: dump client API info to SavedVariables
         dumpApi()
     elseif cmd == "probe" then
         dumpProbe()
+    --@end-debug@
     elseif cmd == "scan" then
         ns.scanNeeded()
     elseif cmd == "resale" and tonumber(arg) then
@@ -526,7 +528,7 @@ SlashCmdList.PROFPATH = function(msg)
     elseif cmd == "about" then
         local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata or function() end)(addonName, "Version")
         chat(("ProfPath %s - cheapest profession leveling from live auction prices."):format(version or ""))
-        chat("Trainer locations from Wowhead (wowhead.com). Recipe data from the game files via wago.tools.")
+        chat("Trainer, node and creature locations from Wowhead (wowhead.com). Recipe data and terrain from the game files via wago.tools. Gathering zones follow the WoW: Forever guides on Wowhead and wow-professions.com.")
     elseif cmd == "minimap" and (arg == "on" or arg == "off") then
         ProfPathDB.minimap = ProfPathDB.minimap or { angle = 225 }
         ProfPathDB.minimap.hide = arg == "off"
