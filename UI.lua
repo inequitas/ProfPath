@@ -208,9 +208,11 @@ function UI.toggle()
     if not frame then build() end
     if frame:IsShown() then frame:Hide(); return end
     frame:Show()
-    ns.recalc()
-    if needsPrep(ns.state) then UI.setTab(1)
-    elseif ns.state.committed then UI.setTab(3) end
+    -- the plan is calculated over a few frames: pick the tab once it's ready
+    ns.recalc(function()
+        if needsPrep(ns.state) then UI.setTab(1)
+        elseif ns.state.committed then UI.setTab(3) end
+    end)
 end
 
 function UI.setTab(i)
@@ -663,12 +665,14 @@ local function zoneList(prof, kind)
     local function reach(z)
         if here == z.map then return 0, "you are here" end
         local zone = ns.Zones and ns.Zones[z.area]
-        local key = zone and zone[2]:gsub("^The ", ""):match("^(%S+)")
+        local zname = zone and zone[2]:lower()
         local fp = false
-        if key then
+        if zname then
+            -- "Crossroads, The Barrens" / "Stormwind, Elwynn": the part after the comma is the zone
+            -- or the start of its name (Elwynn -> Elwynn Forest, Stranglethorn -> Stranglethorn Vale).
             for name in pairs(taxi) do
-                local where = name:match(",%s*(.+)$") or name
-                if where:lower():find(key:lower(), 1, true) then fp = true; break end
+                local where = (name:match(",%s*(.+)$") or name):lower()
+                if zname == where or zname:sub(1, #where + 1) == where .. " " then fp = true; break end
             end
         end
         local ok, inst, pos = pcall(C_Map.GetWorldPosFromMapPos, z.map, CreateVector2D(0.5, 0.5))

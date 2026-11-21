@@ -330,7 +330,7 @@ local function optimizeWith(ctx, zeroFree)
         cash = cash + lineCost
         shopping[#shopping + 1] = {
             itemID = itemID, needed = n, owned = owned, buy = buy, source = src,
-            lineCost = lineCost, unitCost = buy > 0 and lineCost / buy or unit,
+            lineCost = lineCost, unitCost = (src ~= "gather" and buy > 0) and lineCost / buy or unit,
         }
     end
     table.sort(shopping, function(a, b) return a.lineCost > b.lineCost end) -- biggest spend first
@@ -411,7 +411,14 @@ function O.optimize(ctx)
     local b = optimizeWith(ctx, false)
     if not a.ok then return b end
     if not b.ok then return a end
-    local function real(r) return (r.cash or 0) + (r.learnTotal or 0) - (r.sellBack or 0) end
+    -- gathered materials cost no gold but are not free: count them at their gather value
+    local function real(r)
+        local g = 0
+        for _, sh in ipairs(r.shopping or {}) do
+            if sh.source == "gather" then g = g + (sh.unitCost or 0) * (sh.buy or 0) end
+        end
+        return (r.cash or 0) + (r.learnTotal or 0) - (r.sellBack or 0) + g
+    end
     return real(b) < real(a) and b or a
 end
 

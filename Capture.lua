@@ -102,7 +102,17 @@ end
 -- c.taxi[name] = true, e.g. "Stormwind, Elwynn". Used to rank gathering zones by how easy they are to reach.
 local function captureTaxi()
     if not (C_TaxiMap and C_TaxiMap.GetAllTaxiNodes) then return end
-    local map = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    -- the flight map shows the whole continent: ask for its nodes, not just the zone you stand in
+    local map = (GetTaxiMapID and GetTaxiMapID())
+    if not map and C_Map and C_Map.GetBestMapForUnit then
+        map = C_Map.GetBestMapForUnit("player")
+        for _ = 1, 4 do -- walk up to the continent map
+            local info = map and C_Map.GetMapInfo and C_Map.GetMapInfo(map)
+            if not info or not info.parentMapID or info.parentMapID == 0 or (Enum and Enum.UIMapType
+                and info.mapType == Enum.UIMapType.Continent) then break end
+            map = info.parentMapID
+        end
+    end
     local nodes = map and C_TaxiMap.GetAllTaxiNodes(map)
     if not nodes then return end
     local c = ns.Recipes.char()
