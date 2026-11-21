@@ -734,7 +734,7 @@ local function zoneList(prof, kind)
             local bits = {}
             local covered = z.nodes and z.share and math.floor(z.nodes * z.share + 0.5)
             if z.len and not z.hotspot then bits[#bits + 1] = ("loop %.1f km"):format(z.len / 1000) end
-            if covered then bits[#bits + 1] = covered .. " nodes" end
+            if covered then bits[#bits + 1] = covered .. (kind == "skinning" and " beast spawns" or " nodes") end
             if z.guide and not z.hotspot then bits[#bits + 1] = "guide pick" end
             if z.side == "C" and not z.hotspot then bits[#bits + 1] = "contested" end
             if row.note then bits[#bits + 1] = row.note end
