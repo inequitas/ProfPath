@@ -109,6 +109,13 @@ local function build()
     for i, name in ipairs(TAB_NAMES) do
         tabs[i] = small(name, 120, 188 + (i - 1) * 126, function() UI.setTab(i) end)
     end
+    -- Settings, in the title bar
+    local gear = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    gear:SetSize(72, 18)
+    gear:SetPoint("TOPLEFT", 6, -3)
+    gear:SetText("Settings")
+    gear:SetScript("OnClick", function() if ns.Settings then ns.Settings.toggle() end end)
+    UI.applyScale()
 
     bar = CreateFrame("StatusBar", nil, frame)
     bar:SetPoint("TOPLEFT", 12, -58)
@@ -210,9 +217,18 @@ function UI.toggle()
     frame:Show()
     -- the plan is calculated over a few frames: pick the tab once it's ready
     ns.recalc(function()
-        if needsPrep(ns.state) then UI.setTab(1)
+        local tab = ns.Settings and ns.Settings.get("openTab") or 0
+        if tab and tab > 0 then
+            if tab > 1 and needsPrep(ns.state) then tab = 1 end -- nothing to plan yet
+            UI.setTab(tab)
+        elseif needsPrep(ns.state) then UI.setTab(1)
         elseif ns.state.committed then UI.setTab(3) end
     end)
+end
+
+-- Window size from the settings (70% to 130%).
+function UI.applyScale()
+    if frame then frame:SetScale(ns.Settings and ns.Settings.get("scale") or 1) end
 end
 
 function UI.setTab(i)
@@ -807,10 +823,11 @@ local function zoneList(prof, kind)
                         local spots = {}
                         for _, o in ipairs(band.zones) do if o.hotspot and o.area == z.area then spots[#spots + 1] = o end end
                         ns.Map.show(z, ("%s %d-%d: %s"):format(label, band.from, band.to, name), spots)
-                        ns.Map.waypoint()
+                        local wp = not ns.Settings or ns.Settings.get("routeWaypoint")
+                        if wp then ns.Map.waypoint() end
                         if ns.Map.openMap then ns.Map.openMap() end
-                        print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap (waypoint set)%s. /pp route off hides it.")
-                            :format(name, #spots > 0 and (", with %d hot spot%s in yellow on the world map"):format(#spots, #spots > 1 and "s" or "") or ""))
+                        print(("|cff33ccffProfPath|r: route for %s shown on your world map and minimap%s%s. /pp route off hides it.")
+                            :format(name, wp and " (waypoint set)" or "", #spots > 0 and (", with %d hot spot%s in yellow on the world map"):format(#spots, #spots > 1 and "s" or "") or ""))
                     end
                     UI.show(lastState)
                 end)

@@ -26,4 +26,5 @@ Map.lua
 Core.lua
 Track.lua
 Minimap.lua
+Settings.lua
 Debug.lua

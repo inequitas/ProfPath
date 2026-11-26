@@ -388,7 +388,7 @@ local function optimizeWith(ctx, zeroFree)
         end
     end
     local _, crafted = shoppingList(steps, unitCost)
-    local partial = convertFree(need, crafted, producers, stockFree, unitCost)
+    local partial = ctx.noConvert and {} or convertFree(need, crafted, producers, stockFree, unitCost)
 
     -- Shopping list with what it really costs to buy the quantity (walking the AH order book).
     local shopping, cash = {}, 0

@@ -208,6 +208,7 @@ local function recalcNow()
             skill = prof.rank or 1, target = t or target, recipes = recipes,
             price = ns.Prices.ahTotal, vendorBuy = ns.Prices.vendorBuy, vendorSell = ns.Prices.vendorSell,
             owned = have, free = free, resaleFactor = opt.resaleFactor, effort = opt.effort or 0,
+            noConvert = opt.useStock == false,
             onlyLevel = only, lockAt = lockAt,
         }
     end
@@ -483,7 +484,7 @@ end
 -- ---------- slash commands ----------
 
 local HELP = {
-    "/profpath - open the window",
+    "/profpath - open the window; /profpath settings - all options in one panel",
     "/profpath resale <0-1> - share of a product's AH value counted as recovered (now %s)",
     "/profpath owned on|off - on: everything in your bags counts as free; off (default): only what you had when you started the plan (Do it) is free, what you buy after is valued at its cost (now %s)",
     "/profpath target <skill|max> - stop at this skill (now %s)",
@@ -536,6 +537,8 @@ SlashCmdList.PROFPATH = function(msg)
         local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata or function() end)(addonName, "Version")
         chat(("ProfPath %s - cheapest profession leveling from live auction prices."):format(version or ""))
         chat("Trainer, node and creature locations from Wowhead (wowhead.com). Recipe data and terrain from the game files via wago.tools. Gathering zones follow the WoW: Forever guides on Wowhead and wow-professions.com.")
+    elseif cmd == "settings" or cmd == "options" or cmd == "config" then
+        if ns.Settings then ns.Settings.toggle() end
     elseif cmd == "minimap" and (arg == "on" or arg == "off") then
         ProfPathDB.minimap = ProfPathDB.minimap or { angle = 225 }
         ProfPathDB.minimap.hide = arg == "off"

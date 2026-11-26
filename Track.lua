@@ -38,8 +38,11 @@ local function planAt(plan, s)
 end
 
 local function alert(msg)
-    if UIErrorsFrame then UIErrorsFrame:AddMessage("ProfPath: " .. msg, 1, 0.82, 0) end
-    if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then pcall(PlaySound, SOUNDKIT.RAID_WARNING) end
+    local S = ns.Settings
+    if UIErrorsFrame and (not S or S.get("alertScreen")) then UIErrorsFrame:AddMessage("ProfPath: " .. msg, 1, 0.82, 0) end
+    if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING and (not S or S.get("alertSound")) then
+        pcall(PlaySound, SOUNDKIT.RAID_WARNING)
+    end
     ns.chat(msg)
     ns.state.alert = { text = msg, t = time() }
 end

@@ -8,9 +8,17 @@ ns.Map = Map
 
 local sqrt, cos, sin, max, min = math.sqrt, math.cos, math.sin, math.max, math.min
 
+-- Route colour and line widths; from the settings (Settings.lua) via applyStyle().
 local COLOR = { 1, 0.35, 0.15, 0.9 }
 local WORLD_THICKNESS = 3  -- screen-ish thickness on the world map (divided by canvas scale)
 local MINI_THICKNESS = 2
+local function applyStyle()
+    local S = ns.Settings
+    if not (S and ProfPathDB) then return end
+    COLOR[1], COLOR[2], COLOR[3] = S.routeColor()
+    WORLD_THICKNESS = S.get("routeWidth") or 3
+    MINI_THICKNESS = S.get("miniRouteWidth") or 2
+end
 local DOT_SIZE = 7         -- world map dot size (divided by canvas scale)
 local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
@@ -246,10 +254,10 @@ local function getMiniLine()
     local l = mLines[mLinesUsed]
     if not l then
         l = mini:CreateLine(nil, "ARTWORK")
-        l:SetColorTexture(COLOR[1], COLOR[2], COLOR[3], COLOR[4])
-        l:SetThickness(MINI_THICKNESS)
         mLines[mLinesUsed] = l
     end
+    l:SetColorTexture(COLOR[1], COLOR[2], COLOR[3], COLOR[4])
+    l:SetThickness(MINI_THICKNESS)
     return l
 end
 
@@ -325,7 +333,7 @@ local function miniUpdate(_, dt)
         onMap = playerOnMap(current.map)
         if onMap ~= was then dirty = true end
     end
-    if not onMap then
+    if not onMap or (ns.Settings and not ns.Settings.get("miniRoute")) then
         hideMini()
         return
     end
@@ -372,6 +380,7 @@ local function setupMini()
 end
 
 local function refresh()
+    pcall(applyStyle)
     dirty = true
     lastX = nil
     onMap = false
@@ -448,6 +457,11 @@ local function clearWaypoint()
         if ourTomTom and TomTom and TomTom.RemoveWaypoint then TomTom:RemoveWaypoint(ourTomTom) end
     end)
     ourWaypoint, ourTomTom = nil, nil
+end
+
+-- Redraw with the current settings (colour, line widths, minimap on/off).
+function Map.restyle()
+    refresh()
 end
 
 function Map.clear()
