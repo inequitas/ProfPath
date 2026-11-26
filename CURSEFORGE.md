@@ -10,16 +10,16 @@ Made for **WoW: Forever**.
 
 ## What's new
 
-**v0.2.1: Trainers, owned stock and steadier plans** *(2026-11-21)*
+**v0.2.2: Settings, leftovers and a simpler Prepare tab** *(2026-11-26)*
 
-- **The right trainer:** "learn" steps point to the closest trainer who can teach that recipe's skill.
-- **Owned stock always helps:** a big stock of one material no longer pulls in a route that needs far more of it.
-- **Steadier plans:** equally cheap recipes go to the best yield, then the quickest craft, so the plan is the same every session. Changing "How far ahead" re-plans a plan you're following.
-- Show route works on the skinning list, and long text wraps.
-- Now also on [Wago Addons](https://addons.wago.io/addons/profpath).
+- **Settings:** all options in one place, in plain words (`/pp settings`, the Settings button, or Options → AddOns → ProfPath).
+- **Leftovers:** the plan makes what it needs from what you have, like Heavy Leather from your Medium Leather, or cured hides with vendor salt.
+- **Simpler Prepare tab:** gold and how far ahead are one click each.
+- The window remembers its position and can be locked or opened with your profession window.
+- The minimap route is drawn in the right place. Data for game build 1.60.1.71139.
 
-Earlier: **v0.2.0** added gathering routes for Mining, Herbalism and Skinning, skinning by level,
-fishing advice and a smarter planner.
+Earlier: **v0.2.1** picked the right trainer for each recipe and made plans steadier; **v0.2.0** added
+gathering routes for Mining, Herbalism and Skinning, skinning by level, fishing advice and a smarter planner.
 
 Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/main/CHANGELOG.md).
 
@@ -43,6 +43,7 @@ Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/m
   nearest trainer who teaches it, with a map waypoint (TomTom is used if you have it).
 - **Gathering routes** for Mining, Herbalism and Skinning: the best zones for your skill (closest first), with a
   compact loop on the world map and minimap, hot spots and cave entrances. Fishing gets advice per skill.
+- **Settings in plain words:** how to buy when gold is tight, cheapest or fewest crafts, alerts, window and route look.
 - **Minimap button** to open it, with your current step in the tooltip.
 
 ## How to use it
@@ -56,6 +57,7 @@ Full history: [changelog on GitHub](https://github.com/inequitas/ProfPath/blob/m
 | Command | What it does |
 |---|---|
 | `/pp` | open or close the window |
+| `/pp settings` | open the settings |
 | `/pp budget 2g` / `mine` / `off` | plan with a set budget, the gold in your bags, or ignore gold |
 | `/pp range 30` / `all` | how far ahead to plan |
 | `/pp effort 25` | extra cost per craft, if you prefer fewer crafts |

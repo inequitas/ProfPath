@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.2: Settings, leftovers and a simpler Prepare tab *(2026-11-26)*
+
+**Added**
+- **Settings.** All options in one place, in plain words: `/pp settings`, the Settings button in the ProfPath window, or the game's Options → AddOns → ProfPath. Choose how to buy when gold is tight, gold to always keep, cheapest or fewest crafts, what your crafts are worth, alerts, window size and start tab, route colour and thickness, and more.
+- **Make what you need from leftovers.** If the plan needs Heavy Leather and you have Medium Leather, it crafts the Heavy Leather from it. Hides you own are cured with salt from a vendor when that beats buying cured ones. Only what's already in your bags counts: it never buys one material on the auction house just to turn it into another.
+- **Window conveniences:** the window remembers where you put it, and can be locked in place, opened together with your profession window, or moved back to the middle.
+
+**Changed**
+- **Simpler Prepare tab.** Gold (use my gold, set an amount, ignore gold) and how far ahead (15, 30 or 50 points, to your cap, or up to a skill you type) are now one click each, with the current choice lit.
+- **Fewer technical details.** The game data build, skipped-recipe counts and calculation time only show if you turn on *Show technical details* in Settings.
+- Recipe data updated for game build 1.60.1.71139: the new Leatherworking recipe Centaur Hoofwarmers; rogue poisons no longer sell to vendors.
+
+**Fixed**
+- **The minimap route is drawn in the right place** and turns with you.
+
 ## v0.2.1: Trainers, owned stock and steadier plans *(2026-11-21)*
 
 **Fixed**

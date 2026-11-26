@@ -2,7 +2,7 @@
 ## Title: ProfPath
 ## Notes: Cheapest profession leveling path from live auction prices.
 ## Author: inequitas
-## Version: 0.2.1
+## Version: 0.2.2
 ## X-License: MIT
 ## X-Curse-Project-ID: 1812869
 ## X-Wago-ID: rNkgrBNa

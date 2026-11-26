@@ -20,18 +20,18 @@ minimap button: **Prepare → Plan → Do it**. Run `/pp help` for all commands.
 
 ## What's new
 
-**[v0.2.1](https://github.com/inequitas/ProfPath/releases/tag/v0.2.1): Trainers, owned stock and steadier plans** *(2026-11-21)*
+**[v0.2.2](https://github.com/inequitas/ProfPath/releases/tag/v0.2.2): Settings, leftovers and a simpler Prepare tab** *(2026-11-26)*
 
-- **The right trainer:** "learn" steps point to the closest trainer who can teach that recipe's skill.
-- **Owned stock always helps:** a big stock of one material no longer pulls in a route that needs far
-  more of it.
-- **Steadier plans:** equally cheap recipes go to the best yield, then the quickest craft, so the plan
-  is the same every session. Changing "How far ahead" re-plans a plan you're following.
-- Show route works on the skinning list, and long text wraps.
-- Now also on [Wago Addons](https://addons.wago.io/addons/profpath).
+- **Settings:** all options in one place, in plain words (`/pp settings`, the Settings button, or
+  Options → AddOns → ProfPath).
+- **Leftovers:** the plan makes what it needs from what you have, like Heavy Leather from your Medium
+  Leather, or cured hides with vendor salt.
+- **Simpler Prepare tab:** gold and how far ahead are one click each.
+- The window remembers its position and can be locked or opened with your profession window.
+- The minimap route is drawn in the right place. Data for game build 1.60.1.71139.
 
-Earlier: **v0.2.0** added gathering routes for Mining, Herbalism and Skinning, skinning by level,
-fishing advice and a smarter planner.
+Earlier: **v0.2.1** picked the right trainer for each recipe and made plans steadier; **v0.2.0** added
+gathering routes for Mining, Herbalism and Skinning, skinning by level, fishing advice and a smarter planner.
 
 Earlier versions and full details: [CHANGELOG.md](CHANGELOG.md).
 
