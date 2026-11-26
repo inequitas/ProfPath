@@ -67,11 +67,18 @@ local lastState
 local function build()
     frame = CreateFrame("Frame", "ProfPathFrame", UIParent, "BasicFrameTemplateWithInset")
     frame:SetSize(WIDTH, HEIGHT)
-    frame:SetPoint("CENTER")
+    UI.restorePosition()
     frame:SetMovable(true); frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetScript("OnDragStart", function(self)
+        if not (ns.Settings and ns.Settings.get("lockWindow")) then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        -- remember where it was put, for the next session
+        local point, _, rel, x, yy = self:GetPoint(1)
+        if point then ProfPathDB.window = { point = point, rel = rel or point, x = x or 0, y = yy or 0 } end
+    end)
     frame:SetFrameStrata("HIGH")
     tinsert(UISpecialFrames, "ProfPathFrame") -- Escape closes it
 
@@ -226,7 +233,22 @@ function UI.toggle()
     end)
 end
 
--- Window size from the settings (70% to 130%).
+-- Saved window position, or the middle of the screen.
+function UI.restorePosition()
+    if not frame then return end
+    local p = ProfPathDB and ProfPathDB.window
+    frame:ClearAllPoints()
+    if p and p.point then frame:SetPoint(p.point, UIParent, p.rel or p.point, p.x or 0, p.y or 0)
+    else frame:SetPoint("CENTER") end
+end
+
+-- Back to the middle of the screen (Settings).
+function UI.resetPosition()
+    if ProfPathDB then ProfPathDB.window = nil end
+    UI.restorePosition()
+end
+
+-- Window size from the settings.
 function UI.applyScale()
     if frame then frame:SetScale(ns.Settings and ns.Settings.get("scale") or 1) end
 end
@@ -255,6 +277,7 @@ local function reset()
         used[kind] = 0
     end
     if UI.budgetBox then UI.budgetBox:Hide() end
+    if UI.targetBox then UI.targetBox:Hide() end
     y = 0
 end
 
@@ -276,6 +299,35 @@ local function budgetBox(x, current)
         box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         box.apply = apply
         UI.budgetBox = box
+    end
+    box:ClearAllPoints()
+    box:SetPoint("TOPLEFT", x, -y - 2)
+    if not box:HasFocus() then box:SetText(current or "") end
+    box:Show()
+    return box
+end
+
+-- Text box for a skill to stop at; empty clears it.
+local function targetBox(x, current)
+    local box = UI.targetBox
+    if not box then
+        box = CreateFrame("EditBox", nil, UI.child, "InputBoxTemplate")
+        box:SetAutoFocus(false)
+        box:SetSize(40, 20)
+        box:SetMaxLetters(3)
+        box:SetNumeric(true)
+        box:SetScript("OnEnterPressed", function(self)
+            local t = self:GetText():match("^%s*(.-)%s*$")
+            local n = tonumber(t)
+            self:ClearFocus()
+            local opt = ProfPathDB.options
+            if t == "" then opt.target = nil
+            elseif n and n >= 1 and n <= 300 then opt.target = math.floor(n)
+            else ns.chat("Type a skill from 1 to 300."); return end
+            ns.recalc()
+        end)
+        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        UI.targetBox = box
     end
     box:ClearAllPoints()
     box:SetPoint("TOPLEFT", x, -y - 2)
@@ -333,7 +385,24 @@ local function button(label, x, w, onClick)
     b:SetFrameLevel((UI.child:GetFrameLevel() or 0) + 3)
     b:SetText(label)
     b:SetScript("OnClick", onClick)
+    -- pooled: clear the "chosen" look a choice row may have left on it
+    b:UnlockHighlight()
+    local fs = b.GetFontString and b:GetFontString()
+    if fs then fs:SetTextColor(1, 0.82, 0) end
     return b
+end
+
+-- Row of buttons where one answer is chosen: list of { value, "Label" }, chosen one lit and white.
+local function choiceRow(x, w, list, current, onPick)
+    for i, e in ipairs(list) do
+        local b = button(e[2], x + (i - 1) * (w + 4), w, function() onPick(e[1]) end)
+        if e[1] == current then
+            b:LockHighlight()
+            local fs = b.GetFontString and b:GetFontString()
+            if fs then fs:SetTextColor(1, 1, 1) end
+        end
+    end
+    return x + #list * (w + 4)
 end
 
 local function clickable(h, onClick)
@@ -478,8 +547,11 @@ local function renderPrepare(state)
         { status = info.trainerSeen and ICON_OK or ICON_TODO })
     trainerHint(prof.name, ns.Recipes.rankForSkill(prof.rank), 34, true)
 
-    line(nil, "Recipe data", ns.Data.build and ("Game data for build %s."):format(ns.Data.build)
-        or "Missing: run tools\\build_data.ps1 and /reload.", nil, { status = ns.Data.build and ICON_OK or ICON_BAD })
+    if not ns.Data.build then
+        line(nil, "Recipe data", "Missing: reinstall ProfPath.", nil, { status = ICON_BAD })
+    elseif ns.Settings and ns.Settings.get("techDetails") then
+        line(nil, "Recipe data", ("Game data for build %s."):format(ns.Data.build), nil, { status = ICON_OK })
+    end
 
     local priced, total, age = priceStatus(state)
     -- A recent full scan saw the whole auction house: items it didn't find simply have no listings.
@@ -506,44 +578,55 @@ local function renderPrepare(state)
         function() if ns.Prices.scanning then ns.Prices.stopScan() else ns.scanNeeded() end end)
     y = y + 32
 
+    -- Gold: one click between using your gold, a set amount, or ignoring gold.
     local opt = ProfPathDB.options
-    local MODES = { batch = "Batches", upfront = "Up front", off = "Off" }
     local mode = opt.budget or "off"
     local gold = GetMoney and GetMoney() or 0
     local b = state.budget
     local goldText
-    if opt.budgetAmount then
-        goldText = ("Budget set to %s (you have %s). "):format(money(opt.budgetAmount), money(gold))
+    if mode == "off" then
+        goldText = ("You have %s. Plans don't look at your gold."):format(money(gold))
+    elseif opt.budgetAmount then
+        goldText = ("Plans spend at most %s (you have %s)."):format(money(opt.budgetAmount), money(gold))
     else
-        goldText = ("You have %s%s. "):format(money(gold), (opt.reserve or 0) > 0 and (", keeping " .. money(opt.reserve) .. " aside") or "")
+        goldText = ("Plans fit the %s you have%s."):format(money(gold),
+            (opt.reserve or 0) > 0 and (", keeping " .. money(opt.reserve) .. " aside") or "")
     end
-    if mode == "off" then goldText = goldText .. "Plans ignore your gold."
-    elseif mode == "batch" then goldText = goldText .. "Plans fit it, buying in batches and vendoring as you go."
-    else goldText = goldText .. "Plans fit it with everything bought up front." end
-    line(nil, opt.budgetAmount and "Budget" or "Your gold", goldText, nil,
-        { status = (b and b.limited) and ICON_TODO or ICON_OK })
-    button("Fit to gold: " .. MODES[mode], 34, 160, function()
-        local order = { batch = "upfront", upfront = "off", off = "batch" }
-        opt.budget = order[mode]
-        ns.recalc()
-    end)
-    local box = budgetBox(206, opt.budgetAmount and moneyPlain(opt.budgetAmount) or "")
-    button("Set", 296, 50, function() box.apply(box) end)
-    button(opt.budgetAmount and "Use my gold" or "Type an amount", 350, 120, function()
-        if opt.budgetAmount then ns.setBudgetAmount(nil) else box:SetFocus() end
-    end)
-    y = y + 32
+    if b and b.limited then goldText = goldText .. " It won't reach your goal: the Plan tab shows how far it gets." end
+    line(nil, "Gold", goldText, nil, { status = (b and b.limited) and ICON_TODO or ICON_OK })
+    local goldChoice = mode == "off" and "off" or (opt.budgetAmount or UI.amountEditing) and "amount" or "mine"
+    local function style() return ns.Settings and ns.Settings.buyStyle() or "batch" end
+    choiceRow(34, 150, { { "mine", "Use my gold" }, { "amount", "Set an amount" }, { "off", "Ignore gold" } },
+        goldChoice, function(v)
+            UI.amountEditing = nil
+            if v == "off" then
+                opt.budget = "off"; ns.recalc()
+            elseif v == "mine" then
+                opt.budget = style(); ns.setBudgetAmount(nil)
+            else
+                UI.amountEditing, UI.focusAmount = true, true
+                if mode == "off" then opt.budget = style(); ns.recalc() else UI.show(state) end
+            end
+        end)
+    y = y + 28
+    if goldChoice == "amount" then
+        text("GameFontHighlightSmall", 38, y + 6, 80, "Spend at most")
+        local box = budgetBox(124, opt.budgetAmount and moneyPlain(opt.budgetAmount) or "")
+        button("Set", 214, 50, function() box.apply(box) end)
+        if UI.focusAmount then UI.focusAmount = nil; box:SetFocus() end
+        y = y + 28
+    end
+    y = y + 4
 
+    -- How far ahead: a few distances, or a skill to stop at.
     line(nil, "How far ahead", opt.target and ("Up to skill %d."):format(opt.target)
         or opt.range and ("The next %d points (%d -> %d)."):format(opt.range, prof.rank or 0, state.target or 0)
         or ("As far as you can go (%d)."):format(state.target or 0), nil, { status = ICON_OK })
-    local RANGES = { 15, 30, 50, false }
-    button("Change range", 34, 160, function()
-        local nextR = RANGES[1]
-        for i, r in ipairs(RANGES) do if r == opt.range then nextR = RANGES[i % #RANGES + 1] end end
-        opt.range, opt.target = nextR, nil
-        ns.recalc()
-    end)
+    local xEnd = choiceRow(34, 86, { { 15, "15 points" }, { 30, "30 points" }, { 50, "50 points" }, { false, "To my cap" } },
+        opt.target and "skill" or (opt.range or false),
+        function(v) opt.range, opt.target = v, nil; ns.recalc() end)
+    text("GameFontHighlightSmall", xEnd + 6, y + 6, 50, "or up to")
+    targetBox(xEnd + 56, opt.target and tostring(opt.target) or "")
     y = y + 32
 
     -- Rank: current cap and what the next rank needs.
@@ -989,8 +1072,8 @@ local function renderPlan(state)
         stepTitle(2, "Not enough gold for the next point",
             ("You have %s to spend%s. Even one more skill point costs more than that."):format(money(b and b.gold or 0),
                 b and b.mode == "upfront" and " up front" or ""))
-        para("Try |cffffffffFit to gold: Batches|r on the Prepare tab (vendoring as you go needs far less gold), "
-            .. "lower the reserve (/pp reserve 0), or earn a little more.")
+        para("In Settings, choose |cffffffffBuy a bit at a time|r (selling as you go needs far less gold) "
+            .. "or lower the gold you keep aside. Or earn a little more.")
         button("<  Back to Prepare", 4, 180, function() UI.setTab(1) end)
         y = y + 32
         return
@@ -1073,19 +1156,25 @@ local function renderPlan(state)
         para(("|cffff8800The plan stops at %d: past that, no recipe has priced materials and a known way to learn it. "
             .. "Scan the auction house or visit a trainer, then it will reach further.|r"):format(state.partialStop))
     end
+    -- Notes: what matters to a player always; recipe counting details only with "Show technical details".
     local notes = {}
-    if (info.estimatedLearn or 0) > 0 then
-        notes[#notes + 1] = info.estimatedLearn .. " trainer recipes past your cap use estimated costs"
+    local tech = ns.Settings and ns.Settings.get("techDetails")
+    if res.missing and #res.missing > 0 then
+        notes[#notes + 1] = #res.missing .. " materials have no price yet (scan the auction house)"
     end
-    if info.unknownLearn > 0 then notes[#notes + 1] = info.unknownLearn .. " recipes skipped (no way to learn known)" end
-    if (info.specSkipped or 0) > 0 then notes[#notes + 1] = info.specSkipped .. " need a specialization you don't have" end
-    if (info.cooldownSkipped or 0) > 0 then notes[#notes + 1] = info.cooldownSkipped .. " have a long cooldown" end
-    if (info.toolSkipped or 0) > 0 then notes[#notes + 1] = info.toolSkipped .. " need a tool with no known price" end
-    if res.missing and #res.missing > 0 then notes[#notes + 1] = #res.missing .. " materials have no price" end
     local gathered = 0
     for _, s in ipairs(res.shopping or {}) do if s.source == "gather" then gathered = gathered + 1 end end
-    if gathered > 0 then notes[#notes + 1] = gathered .. " materials you gather yourself (valued at their vendor price)" end
-    if state.ms then notes[#notes + 1] = ("calculated in %d ms"):format(floor(state.ms + 0.5)) end
+    if gathered > 0 then notes[#notes + 1] = gathered .. " materials you gather yourself" end
+    if tech then
+        if (info.estimatedLearn or 0) > 0 then
+            notes[#notes + 1] = info.estimatedLearn .. " trainer recipes past your cap use estimated costs"
+        end
+        if info.unknownLearn > 0 then notes[#notes + 1] = info.unknownLearn .. " recipes skipped (no way to learn known)" end
+        if (info.specSkipped or 0) > 0 then notes[#notes + 1] = info.specSkipped .. " need a specialization you don't have" end
+        if (info.cooldownSkipped or 0) > 0 then notes[#notes + 1] = info.cooldownSkipped .. " have a long cooldown" end
+        if (info.toolSkipped or 0) > 0 then notes[#notes + 1] = info.toolSkipped .. " need a tool with no known price" end
+        if state.ms then notes[#notes + 1] = ("calculated in %d ms"):format(floor(state.ms + 0.5)) end
+    end
     if #notes > 0 then y = y + 6; para("|cff888888" .. table.concat(notes, "  -  ") .. "|r") end
 
     y = y + 6

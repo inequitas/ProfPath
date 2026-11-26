@@ -477,7 +477,7 @@ end
 function ns.setBudgetAmount(copper)
     local opt = ProfPathDB.options
     opt.budgetAmount = copper
-    if copper and (opt.budget or "off") == "off" then opt.budget = "batch" end
+    if copper and (opt.budget or "off") == "off" then opt.budget = ns.Settings and ns.Settings.buyStyle() or "batch" end
     ns.recalc()
 end
 
@@ -726,7 +726,11 @@ frame:SetScript("OnEvent", function(self, event, name)
             pcall(self.RegisterEvent, self, e)
         end
     elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" then
-        if event == "TRADE_SKILL_SHOW" then ns.Recipes.switchOnOpen = true end
+        if event == "TRADE_SKILL_SHOW" then
+            ns.Recipes.switchOnOpen = true
+            -- Settings: open ProfPath alongside the profession window
+            if ns.Settings and ns.Settings.get("openWithProfession") and not ns.UI.isShown() then ns.UI.toggle() end
+        end
         requestCapture()
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         ns.requestRedraw()

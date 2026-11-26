@@ -130,6 +130,7 @@ do
     ns.UI.setTab(2)                    -- plan tab with the detail panel open
     ns.UI.setTab(3)                    -- do-it tab
     ns.UI.setTab(1)                    -- prepare tab
+    assert(ns.UI.targetBox and ns.UI.targetBox.shown ~= false, "Prepare draws the gold and range choices")
     ns.UI.setTab(2)
     local clicked = 0
     for _, f in ipairs(frames) do if f.scripts.OnClick and f.shown then clicked = clicked + 1 end end

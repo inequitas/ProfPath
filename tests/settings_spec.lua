@@ -31,7 +31,7 @@ end
 CreateFrame = function(kind, name) return newFrame(kind, name) end
 UIParent, UISpecialFrames = {}, {}
 tinsert = table.insert
-ProfPathDB = { options = { range = 30, budget = "batch", prune = true, track = true }, minimap = { angle = 225 } }
+ProfPathDB = { options = { range = 30, budget = "batch", prune = true, track = true, resaleFactor = 0, ownedFree = false }, minimap = { angle = 225 } }
 local chats = {}
 local ns = { chat = function(m) chats[#chats + 1] = m end }
 local replans = 0
@@ -53,72 +53,75 @@ local S = ns.Settings
 local fails = 0
 local function check(ok, what) if ok then print("ok   " .. what) else fails = fails + 1; print("FAIL " .. what) end end
 
+
+
+local centered, redraws = 0, 0
+ns.UI.resetPosition = function() centered = centered + 1 end
+ns.requestRedraw = function() redraws = redraws + 1 end
+
 S.toggle() -- builds the window and shows it (OnShow hook builds the panel)
-local function labelled(text)
-    -- the control whose label (a font string created just before it) says `text`
-    for i, s in ipairs(fontStrings) do
-        if s.text == text then return i end
-    end
-end
--- find controls by kind
-local checks, sliders, cycles, boxes = {}, {}, {}, {}
-for _, f in ipairs(frames) do
-    if f.kind == "Button" and f.scripts.OnClick and not f.text:find("Reset") and f.text == "" then checks[#checks + 1] = f end
-    if f.kind == "Slider" then sliders[#sliders + 1] = f end
-    if f.kind == "Button" and f.text ~= "" and not f.text:find("Reset") then cycles[#cycles + 1] = f end
-    if f.kind == "EditBox" then boxes[#boxes + 1] = f end
-end
-check(#checks == 10, "10 checkboxes, got " .. #checks)
-check(#sliders == 5, "5 sliders, got " .. #sliders)
-check(#cycles == 4, "4 choice buttons, got " .. #cycles)
-check(#boxes == 3, "3 text boxes, got " .. #boxes)
-
--- choice buttons: How far ahead (30 -> 50), budget (batch -> upfront), open on (0 -> 1), colour (1 -> 2)
-check(cycles[1].text == "30 points", "range shows 30 points")
-cycles[1].scripts.OnClick(cycles[1])
-check(ProfPathDB.options.range == 50 and cycles[1].text == "50 points", "range cycles to 50")
-cycles[2].scripts.OnClick(cycles[2])
-check(ProfPathDB.options.budget == "upfront", "budget cycles to up front")
-cycles[3].scripts.OnClick(cycles[3])
-check(ProfPathDB.options.openTab == 1, "open on Prepare")
-cycles[4].scripts.OnClick(cycles[4])
-check(ProfPathDB.options.routeColor == 2 and restyles > 0, "route colour 2, map restyled")
-
--- checkboxes in order: ownedFree, useStock, gather, prune, track, sound, screen, minimap button, mini route, waypoint
-checks[1].scripts.OnClick(checks[1]); check(ProfPathDB.options.ownedFree == true, "bags free on")
-checks[2].scripts.OnClick(checks[2]); check(ProfPathDB.options.useStock == false, "craft from stock off")
-checks[3].scripts.OnClick(checks[3]); check(ProfPathDB.options.gather == false, "gather off")
-checks[4].scripts.OnClick(checks[4]); check(ProfPathDB.options.prune == false, "prune off")
-checks[5].scripts.OnClick(checks[5]); check(ProfPathDB.options.track == false, "track off")
-checks[6].scripts.OnClick(checks[6]); check(S.get("alertSound") == false, "sound off")
-checks[7].scripts.OnClick(checks[7]); check(S.get("alertScreen") == false, "screen alert off")
-checks[8].scripts.OnClick(checks[8]); check(ProfPathDB.minimap.hide == true and minimapRefresh > 0, "minimap button hidden")
-checks[9].scripts.OnClick(checks[9]); check(S.get("miniRoute") == false, "minimap route off")
-checks[10].scripts.OnClick(checks[10]); check(S.get("routeWaypoint") == false, "no waypoint")
-
--- sliders: resale, effort, scale, world width, minimap width
-sliders[1]:SetValue(25); check(math.abs(ProfPathDB.options.resaleFactor - 0.25) < 1e-9, "resale 25%")
-sliders[2]:SetValue(40); check(ProfPathDB.options.effort == 40, "effort 40c")
-sliders[3]:SetValue(110); check(math.abs(S.get("scale") - 1.1) < 1e-9 and scaled > 0, "window 110%")
-sliders[4]:SetValue(5); check(S.get("routeWidth") == 5, "world line 5")
-sliders[5]:SetValue(3); check(S.get("miniRouteWidth") == 3, "minimap line 3")
-
--- text boxes: stop at, amount, reserve
-boxes[1].text = "205"; boxes[1].scripts.OnEnterPressed(boxes[1]); check(ProfPathDB.options.target == 205, "stop at 205")
-boxes[1].text = "999"; boxes[1].scripts.OnEnterPressed(boxes[1]); check(ProfPathDB.options.target == 205 and #chats > 0, "999 refused")
-boxes[1].text = ""; boxes[1].scripts.OnEnterPressed(boxes[1]); check(ProfPathDB.options.target == nil, "empty: no fixed end")
-boxes[2].text = "5g"; boxes[2].scripts.OnEnterPressed(boxes[2]); check(ProfPathDB.options.budgetAmount == 50000, "amount 5g")
-check(boxes[2].text == "5g", "amount shown as 5g")
-boxes[3].text = "1g 50s"; boxes[3].scripts.OnEnterPressed(boxes[3]); check(ProfPathDB.options.reserve == 15000, "reserve 1g 50s")
-check(replans >= 10, "planning options re-plan (" .. replans .. ")")
-
--- reset
-S.reset()
+local C = S.controls
 local o = ProfPathDB.options
-check(o.range == 30 and o.budget == "batch" and o.target == nil and o.budgetAmount == nil and o.ownedFree == nil
-    and o.gather == nil and o.prune == true and o.track == true and S.get("useStock") == true
-    and S.get("routeColor") == 1 and S.get("scale") == 1 and not ProfPathDB.minimap.hide, "reset to defaults")
-check(cycles[1].text == "30 points", "controls show the reset values")
+local function click(b) b.scripts.OnClick(b) end -- the real click handler
+
+-- Gold and range live on the Prepare tab, not here
+check(C.range == nil and C.budget == nil and C.budgetAmount == nil and C.target == nil, "no gold/range duplicates")
+
+-- Shopping
+check(C.buyStyle.selected() == 1, "buy a bit at a time by default")
+click(C.buyStyle.buttons[2]); check(o.buyStyle == "upfront" and o.budget == "upfront", "buy everything first (budget follows)")
+o.budget = "off"; click(C.buyStyle.buttons[1])
+check(o.buyStyle == "batch" and o.budget == "off", "with gold ignored, only the preference changes")
+check(S.buyStyle() == "batch", "buyStyle() reads it")
+C.reserve.type("1g 50s"); check(o.reserve == 15000 and C.reserve.box.text == "1g 50s", "keep 1g 50s")
+C.reserve.type("lots"); check(o.reserve == 15000 and #chats > 0, "unreadable amount refused")
+click(C.ownedFree.buttons[2]); check(o.ownedFree == true, "bag items always free")
+click(C.useStock.button); check(o.useStock == false, "leftovers off")
+click(C.gather.button); check(o.gather == false, "gather off")
+
+-- Choosing recipes
+check(C.resale.selected() == 1, "resale shows vendor price")
+o.resaleFactor = 0.4; S.refresh(); check(C.resale.selected() == 2, "old 40% shows as half")
+click(C.resale.buttons[3]); check(o.resaleFactor == 1, "full auction price")
+click(C.effort.buttons[3]); check(o.effort == 200, "fewer crafts")
+click(C.effort.buttons[1]); check(o.effort == nil, "cheapest clears effort")
+
+-- While you level
+click(C.track.button); check(o.track == false, "tracking off")
+click(C.alertSound.button); check(S.get("alertSound") == false, "sound off")
+click(C.alertScreen.button); check(S.get("alertScreen") == false, "screen alert off")
+
+-- Window
+click(C.openWithProfession.button); check(S.get("openWithProfession") == true, "open with profession window")
+click(C.openTab.buttons[2]); check(o.openTab == 1, "open on Prepare")
+click(C.scale.buttons[3]); check(math.abs(S.get("scale") - 1.15) < 1e-9 and scaled > 0, "window large")
+click(C.lockWindow.button); check(S.get("lockWindow") == true, "window locked")
+click(C.minimap.button); check(ProfPathDB.minimap.hide == true and minimapRefresh > 0, "minimap button hidden")
+click(S.centerButton); check(centered == 1, "window moved to the middle")
+
+-- Routes
+click(C.routeColor.buttons[5]); check(o.routeColor == 5 and restyles > 0, "route cyan")
+check(C.routeColor.buttons[5].ring.shown and not C.routeColor.buttons[1].ring.shown, "chosen swatch framed")
+click(C.routeWidth.buttons[3]); check(o.routeWidth == 5 and o.miniRouteWidth == 3, "thick lines on both maps")
+click(C.miniRoute.button); check(S.get("miniRoute") == false, "minimap route off")
+click(C.routeWaypoint.button); check(S.get("routeWaypoint") == false, "no waypoint")
+
+-- Advanced
+click(C.prune.button); check(o.prune == false, "faster scans off")
+click(C.techDetails.button); check(S.get("techDetails") == true and redraws > 0, "technical details on, window redrawn")
+check(replans >= 9, "planning answers re-plan (" .. replans .. ")")
+
+-- Reset: this panel's settings back to default, Prepare's gold and range left alone
+o.range, o.target, o.budget, o.budgetAmount = 50, 210, "upfront", 70000
+click(S.resetButton)
+check(o.range == 50 and o.target == 210 and o.budgetAmount == 70000, "reset keeps gold amount and range")
+check(o.budget == "batch", "reset: buying a bit at a time again")
+check(o.reserve == nil and o.ownedFree == false and o.resaleFactor == 0 and o.effort == nil and o.gather == nil
+    and o.prune == true and o.track == true and S.get("useStock") == true and S.get("routeColor") == 1
+    and S.get("scale") == 1 and S.get("routeWidth") == 3 and S.get("lockWindow") == false
+    and S.get("openWithProfession") == false and S.get("techDetails") == false
+    and not ProfPathDB.minimap.hide, "reset to defaults")
+check(C.resale.selected() == 1 and C.routeWidth.selected() == 2 and C.buyStyle.selected() == 1, "controls show the reset values")
 
 print(fails == 0 and "settings ok" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

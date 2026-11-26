@@ -7,7 +7,6 @@ local S = {}
 ns.Settings = S
 
 local WIDTH, HEIGHT = 520, 600
-local LABEL_W = 230
 
 -- Route colours to pick from.
 S.COLORS = {
@@ -19,7 +18,16 @@ S.COLORS = {
 S.DEFAULTS = {
     useStock = true, alertSound = true, alertScreen = true, scale = 1, openTab = 0,
     routeColor = 1, routeWidth = 3, miniRouteWidth = 2, miniRoute = true, routeWaypoint = true,
+    buyStyle = "batch", openWithProfession = false, lockWindow = false, techDetails = false,
 }
+
+-- How plans fitted to your gold buy: "batch" (a bit at a time) or "upfront". Follows the current
+-- budget mode when it is on, so older saved settings keep their choice.
+function S.buyStyle()
+    local b = ProfPathDB and ProfPathDB.options and ProfPathDB.options.budget
+    if b == "batch" or b == "upfront" then return b end
+    return S.get("buyStyle")
+end
 
 function S.get(key)
     local o = ProfPathDB and ProfPathDB.options or {}
@@ -39,8 +47,20 @@ local function replan() if ns.requestRecalc then ns.requestRecalc() end end
 local function restyleMap() if ns.Map and ns.Map.restyle then ns.Map.restyle() end end
 
 -- ---------- controls ----------
+-- Every control is a question with its answers in view: radio choices, checkboxes, a few text
+-- boxes and colour swatches. S.controls[key] gives tests a handle on each one.
 
+local INNER = 460 -- content width
 local controls = {} -- every built control, refreshed when a panel is shown
+S.controls = {}
+
+local function register(key, c)
+    c.key = key
+    controls[#controls + 1] = c
+    S.controls[key] = c
+    c.refresh()
+    return c
+end
 
 local function label(parent, text, x, y, font, w)
     local f = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
@@ -50,124 +70,147 @@ local function label(parent, text, x, y, font, w)
     return f
 end
 
-local function checkbox(parent, x, y, text, tip, get, set)
+-- Grey explanation under a question; returns its height.
+local function hint(parent, text, x, y)
+    if not text then return 0 end
+    local t = label(parent, text, x, y, "GameFontDisableSmall", INNER - (x - 8))
+    return math.max(12, t:GetStringHeight() or 12) + 4
+end
+
+-- One radio button with its label; the label is part of the click area.
+local function radio(parent, x, y, text, width, onClick)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(16, 16)
+    b:SetPoint("TOPLEFT", x, -y)
+    b:SetHitRectInsets(0, -(width - 20), 0, 0)
+    local t = b:CreateTexture(nil, "ARTWORK")
+    t:SetAllPoints(); t:SetTexture("Interface\\Buttons\\UI-RadioButton")
+    local h = b:CreateTexture(nil, "HIGHLIGHT")
+    h:SetAllPoints(); h:SetTexture("Interface\\Buttons\\UI-RadioButton"); h:SetTexCoord(0.5, 0.75, 0, 1)
+    h:SetBlendMode("ADD")
+    label(parent, text, x + 20, y + 1, "GameFontHighlight", width - 24)
+    b:SetScript("OnClick", onClick)
+    function b.select(on) t:SetTexCoord(on and 0.25 or 0, on and 0.5 or 0.25, 0, 1) end
+    return b
+end
+
+-- A question with answers { value, "Answer" }. opts.cols lays them out in columns; opts.nearest
+-- selects the closest answer when the saved number is in between (older saved values).
+local function choice(parent, x, y, key, question, tip, list, get, set, opts)
+    opts = opts or {}
+    local cols = opts.cols or 1
+    local top = y
+    label(parent, question, x, y, "GameFontNormal")
+    y = y + 18
+    y = y + hint(parent, tip, x, y)
+    local colW = math.floor((INNER - 4) / cols)
+    local c = { buttons = {} }
+    local function selected()
+        local v = get()
+        for i, e in ipairs(list) do if e[1] == v then return i end end
+        if opts.nearest and type(v) == "number" then
+            local best, bd
+            for i, e in ipairs(list) do
+                local d = type(e[1]) == "number" and math.abs(e[1] - v)
+                if d and (not bd or d < bd) then best, bd = i, d end
+            end
+            return best
+        end
+    end
+    function c.refresh()
+        local s = selected()
+        for i, b in ipairs(c.buttons) do b.select(i == s) end
+    end
+    function c.pick(i) set(list[i][1]); S.refresh() end
+    function c.selected() return selected() end
+    for i, e in ipairs(list) do
+        local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+        c.buttons[i] = radio(parent, x + 4 + col * colW, y + row * 22, e[2], colW, function() c.pick(i) end)
+    end
+    register(key, c)
+    return y + math.ceil(#list / cols) * 22 - top
+end
+
+local function checkbox(parent, x, y, key, text, tip, get, set)
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(24, 24)
     b:SetPoint("TOPLEFT", x, -y)
+    b:SetHitRectInsets(0, -(INNER - 40), 0, 0)
     local box = b:CreateTexture(nil, "ARTWORK")
     box:SetAllPoints(); box:SetTexture("Interface\\Buttons\\UI-CheckBox-Up")
     local check = b:CreateTexture(nil, "OVERLAY")
     check:SetAllPoints(); check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     b:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
-    local l = label(parent, text, x + 28, y + 5, "GameFontHighlight", 440)
-    local tipF = tip and label(parent, tip, x + 28, y + 22, "GameFontDisableSmall", 440)
-    local c = {}
+    label(parent, text, x + 28, y + 5, "GameFontHighlight", INNER - 36)
+    local c = { button = b }
     function c.refresh() if get() then check:Show() else check:Hide() end end
-    b:SetScript("OnClick", function() set(not get()); c.refresh() end)
-    controls[#controls + 1] = c
-    c.refresh()
-    local h = 28
-    if tipF then h = 26 + math.max(12, tipF:GetStringHeight() or 12) end
-    return h, l
+    function c.checked() return get() and true or false end
+    function c.toggle() set(not get()); S.refresh() end
+    b:SetScript("OnClick", function() c.toggle() end)
+    register(key, c)
+    return 26 + (tip and hint(parent, tip, x + 28, y + 24) or 0)
 end
 
--- Horizontal slider with a value label: min, max, step; fmt(v) formats the value.
-local function slider(parent, x, y, text, tip, min, max, step, get, set, fmt)
-    label(parent, text, x, y + 2)
-    local value = label(parent, "", x + LABEL_W + 190, y + 2, "GameFontHighlightSmall")
-    local s = CreateFrame("Slider", nil, parent)
-    s:SetOrientation("HORIZONTAL")
-    s:SetSize(180, 16)
-    s:SetPoint("TOPLEFT", x + LABEL_W, -y)
-    local track = s:CreateTexture(nil, "BACKGROUND")
-    track:SetPoint("LEFT", 0, 0); track:SetPoint("RIGHT", 0, 0); track:SetHeight(6)
-    track:SetColorTexture(0.3, 0.3, 0.3, 0.9)
-    s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-    s:SetMinMaxValues(min, max)
-    s:SetValueStep(step)
-    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
-    s:EnableMouse(true)
-    local c, quiet = {}, false
-    function c.refresh()
-        quiet = true
-        s:SetValue(get())
-        value:SetText(fmt(get()))
-        quiet = false
-    end
-    s:SetScript("OnValueChanged", function(_, v)
-        v = math.floor(v / step + 0.5) * step
-        value:SetText(fmt(v))
-        if not quiet and v ~= get() then set(v) end
-    end)
-    controls[#controls + 1] = c
-    c.refresh()
-    local h = 26
-    if tip then
-        local t = label(parent, tip, x, y + 20, "GameFontDisableSmall", 460)
-        h = 24 + math.max(12, t:GetStringHeight() or 12)
-    end
-    return h
-end
-
--- Button that cycles through choices: list of { value, "Label" }.
-local function cycle(parent, x, y, text, tip, list, get, set)
-    label(parent, text, x, y + 4)
-    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetSize(180, 22)
-    b:SetPoint("TOPLEFT", x + LABEL_W, -y)
-    local c = {}
-    local function index()
-        for i, e in ipairs(list) do if e[1] == get() then return i end end
-        return 1
-    end
-    function c.refresh() b:SetText(list[index()][2]) end
-    b:SetScript("OnClick", function()
-        local i = index() % #list + 1
-        set(list[i][1]); c.refresh()
-    end)
-    controls[#controls + 1] = c
-    c.refresh()
-    local h = 28
-    if tip then
-        local t = label(parent, tip, x, y + 24, "GameFontDisableSmall", 460)
-        h = 28 + math.max(12, t:GetStringHeight() or 12)
-    end
-    return h
-end
-
--- Text box: parse(text) returns the value or nil (shows an error), show(value) gives the text.
-local function input(parent, x, y, text, tip, get, set, parse, show)
-    label(parent, text, x, y + 4)
+-- Text box on one line with its label. parse(text) returns ok, value (or false, error message).
+local function input(parent, x, y, key, text, tip, get, set, parse, show)
+    label(parent, text, x, y + 4, "GameFontHighlight")
     local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
     box:SetAutoFocus(false)
-    box:SetSize(120, 20)
-    box:SetPoint("TOPLEFT", x + LABEL_W + 6, -y)
-    local c = {}
+    box:SetSize(110, 20)
+    box:SetPoint("TOPLEFT", x + 190, -y)
+    local c = { box = box }
     function c.refresh() box:SetText(show(get())) end
     local function apply(self)
         local ok, v = parse(self:GetText())
         self:ClearFocus()
         if ok then set(v) else ns.chat(v or "Couldn't read that.") end
-        c.refresh()
+        S.refresh()
     end
+    function c.type(t) box:SetText(t); apply(box) end
     box:SetScript("OnEnterPressed", apply)
-    box:SetScript("OnEditFocusLost", function(self) c.refresh() end)
+    box:SetScript("OnEditFocusLost", function() c.refresh() end)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus(); c.refresh() end)
-    controls[#controls + 1] = c
-    c.refresh()
-    local h = 28
-    if tip then
-        local t = label(parent, tip, x, y + 24, "GameFontDisableSmall", 460)
-        h = 28 + math.max(12, t:GetStringHeight() or 12)
+    register(key, c)
+    return 26 + (tip and hint(parent, tip, x + 190, y + 22) or 0)
+end
+
+-- Row of colour swatches; the chosen one gets a white frame.
+local function swatches(parent, x, y, key, question, colors, get, set)
+    label(parent, question, x, y, "GameFontNormal")
+    y = y + 20
+    local c = { buttons = {} }
+    function c.refresh()
+        for i, b in ipairs(c.buttons) do if i == get() then b.ring:Show() else b.ring:Hide() end end
     end
-    return h
+    function c.pick(i) set(i); S.refresh() end
+    for i, col in ipairs(colors) do
+        local b = CreateFrame("Button", nil, parent)
+        b:SetSize(26, 26)
+        b:SetPoint("TOPLEFT", x + 4 + (i - 1) * 34, -y)
+        b.ring = b:CreateTexture(nil, "BACKGROUND")
+        b.ring:SetPoint("TOPLEFT", -3, 3); b.ring:SetPoint("BOTTOMRIGHT", 3, -3)
+        b.ring:SetColorTexture(1, 1, 1, 1)
+        local edge = b:CreateTexture(nil, "BORDER")
+        edge:SetAllPoints(); edge:SetColorTexture(0, 0, 0, 1)
+        local fill = b:CreateTexture(nil, "ARTWORK")
+        fill:SetPoint("TOPLEFT", 2, -2); fill:SetPoint("BOTTOMRIGHT", -2, 2)
+        fill:SetColorTexture(col[2], col[3], col[4], 1)
+        b:SetScript("OnClick", function() c.pick(i) end)
+        b:SetScript("OnEnter", function(self)
+            if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(col[1]); GameTooltip:Show() end
+        end)
+        b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        c.buttons[i] = b
+    end
+    register(key, c)
+    return 20 + 30
 end
 
 local function heading(parent, y, text)
     label(parent, text, 4, y, "GameFontNormalLarge")
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetPoint("TOPLEFT", 4, -(y + 22))
-    line:SetSize(460, 1)
+    line:SetSize(INNER, 1)
     line:SetColorTexture(1, 0.82, 0, 0.4)
     return 30
 end
@@ -179,127 +222,132 @@ local function money(c)
     return ("%ds"):format(s)
 end
 
+local function parseGold(t)
+    if t:match("^%s*$") then return true, nil end
+    local c = ns.parseMoney and ns.parseMoney(t)
+    if c then return true, c end
+    return false, "Couldn't read that amount. Try 5g, 1g 50s or 50s."
+end
+
+-- Route line thickness: one choice sets both the world map and the minimap line.
+local MINI_FOR = { [2] = 1, [3] = 2, [5] = 3 }
+
 -- ---------- the panel ----------
 
+
+local function redraw() if ns.requestRedraw then ns.requestRedraw() end end
+
 -- Builds every setting into `parent` (a scroll child). Returns its height.
+-- Gold and how far ahead are not here: they're one click away on the Prepare tab.
 local function buildInto(parent)
     local x, y = 8, 6
-    local function add(h) y = y + h + 4 end
+    local function add(h, gap) y = y + h + (gap or 10) end
 
-    add(heading(parent, y, "Planning"))
-    add(cycle(parent, x, y, "How far ahead", "Plan (and scan prices for) this many skill points ahead, or to the end.",
-        { { 10, "10 points" }, { 20, "20 points" }, { 30, "30 points" }, { 50, "50 points" }, { 75, "75 points" },
-          { 100, "100 points" }, { false, "As far as you can" } },
-        function() return opt().range or false end,
-        function(v) opt().range = v; replan() end))
-    add(input(parent, x, y, "Stop at skill", "Plan up to this skill, whatever the range. Empty: no fixed end.",
-        function() return opt().target end,
-        function(v) opt().target = v; replan() end,
-        function(t)
-            t = t:match("^%s*(.-)%s*$")
-            if t == "" then return true, nil end
-            local n = tonumber(t)
-            if n and n >= 1 and n <= 300 then return true, math.floor(n) end
-            return false, "Type a skill from 1 to 300, or leave it empty."
-        end,
-        function(v) return v and tostring(v) or "" end))
-    add(cycle(parent, x, y, "Budget", "Batches: buy and craft in steps your gold allows, vendoring as you go. "
-        .. "Up front: everything at once. Off: ignore gold.",
-        { { "batch", "Fit to gold: batches" }, { "upfront", "Fit to gold: up front" }, { "off", "Off" } },
-        function() return opt().budget or "off" end,
-        function(v) opt().budget = v; replan() end))
-    add(input(parent, x, y, "Budget amount", "Gold to plan with, like 5g or 1g 50s. Empty: the gold in your bags.",
-        function() return opt().budgetAmount end,
-        function(v) opt().budgetAmount = v; replan() end,
-        function(t)
-            if t:match("^%s*$") then return true, nil end
-            local c = ns.parseMoney and ns.parseMoney(t)
-            if c then return true, c end
-            return false, "Couldn't read that amount. Try 2, 1g 50s or 50s."
-        end, money))
-    add(input(parent, x, y, "Keep in reserve", "With the gold in your bags as budget, keep this much aside.",
+    y = y + hint(parent, "Your gold and how far ahead to plan are set on the Prepare tab of the ProfPath window.", x, y) + 6
+
+    add(heading(parent, y, "Shopping"))
+    add(choice(parent, x, y, "buyStyle", "When ProfPath fits a plan to your gold",
+        "Buying a bit at a time lets you reach much further with the same gold.",
+        { { "batch", "Buy a bit at a time: buy, craft, sell to a vendor, repeat" },
+          { "upfront", "Buy everything before I start crafting" } },
+        function() return S.buyStyle() end,
+        function(v)
+            opt().buyStyle = v
+            if (opt().budget or "off") ~= "off" then opt().budget = v end
+            replan()
+        end), 4)
+    add(input(parent, x + 4, y, "reserve", "Always keep at least", "Gold the plan never spends.",
         function() return opt().reserve end,
-        function(v) opt().reserve = v; replan() end,
-        function(t)
-            if t:match("^%s*$") then return true, nil end
-            local c = ns.parseMoney and ns.parseMoney(t)
-            if c then return true, c end
-            return false, "Couldn't read that amount. Try 2, 1g 50s or 50s."
-        end, money))
-    add(checkbox(parent, x, y, "Everything in your bags is free",
-        "Off (default): only what you had when you started the plan counts as free; what you buy later counts at its price.",
-        function() return opt().ownedFree end, function(v) opt().ownedFree = v or nil; replan() end))
-    add(checkbox(parent, x, y, "Craft from your own stock",
-        "Turn materials you already have into ones the plan needs (Medium into Heavy Leather, hides into cured hides with vendor salt).",
-        function() return S.get("useStock") end, function(v) opt().useStock = v; replan() end))
-    add(checkbox(parent, x, y, "Gather materials yourself",
-        "When nobody sells a material and you have the gathering profession, plan to gather it.",
+        function(v) opt().reserve = v; replan() end, parseGold, money))
+    add(choice(parent, x, y, "ownedFree", "Materials already in your bags",
+        "ProfPath always uses them first. With the first choice, buying for the plan won't change the plan.",
+        { { false, "Free if I had them when I started the plan" }, { true, "Always free" } },
+        function() return opt().ownedFree and true or false end,
+        function(v) opt().ownedFree = v; replan() end), 4)
+    add(checkbox(parent, x, y, "useStock", "Make what I need from leftovers I have",
+        "For example Heavy Leather from your Medium Leather, or cured hides with salt from a vendor.",
+        function() return S.get("useStock") end, function(v) opt().useStock = v; replan() end), 2)
+    add(checkbox(parent, x, y, "gather", "Gather materials myself when nobody sells them",
+        "Only when you have the gathering profession for them.",
         function() return opt().gather ~= false end, function(v) opt().gather = v; replan() end))
-    add(slider(parent, x, y, "Resale value counted",
-        "Share of a crafted item's auction price counted as money back. 0% = vendor price only.",
-        0, 100, 5, function() return math.floor((opt().resaleFactor or 0.5) * 100 + 0.5) end,
-        function(v) opt().resaleFactor = v / 100; replan() end,
-        function(v) return v .. "%" end))
-    add(slider(parent, x, y, "Extra cost per craft",
-        "Counts each craft as this much more expensive, to prefer plans with fewer crafts.",
-        0, 100, 5, function() return opt().effort or 0 end,
-        function(v) opt().effort = v > 0 and v or nil; replan() end,
-        function(v) return v .. "c" end))
 
-    add(heading(parent, y, "Auction house scans"))
-    add(checkbox(parent, x, y, "Skip overpriced items",
-        "During item-by-item scans, skip items only used by recipes that are clearly too expensive.",
-        function() return opt().prune ~= false end, function(v) opt().prune = v end))
+    add(heading(parent, y, "Choosing recipes"))
+    add(choice(parent, x, y, "effort", "Cheapest or quickest?", nil,
+        { { 0, "Cheapest, however many crafts it takes" }, { 50, "A balance of both" },
+          { 200, "Fewer crafts, even if it costs a bit more" } },
+        function() return opt().effort or 0 end,
+        function(v) opt().effort = v > 0 and v or nil; replan() end, { nearest = true }))
+    add(choice(parent, x, y, "resale", "What you craft is worth",
+        "Money back from selling what you craft makes a recipe cheaper.",
+        { { 0, "Its vendor price (safe)" }, { 0.5, "Half its auction price" }, { 1, "Its full auction price" } },
+        function() return opt().resaleFactor or 0 end,
+        function(v) opt().resaleFactor = v; replan() end, { nearest = true }))
 
     add(heading(parent, y, "While you level"))
-    add(checkbox(parent, x, y, "Re-plan on every skill-up",
-        "Keeps the plan current with the window closed, and tells you when a step is done or a cheaper path appears.",
-        function() return opt().track ~= false end, function(v) opt().track = v end))
-    add(checkbox(parent, x, y, "Alert sound", nil,
-        function() return S.get("alertSound") end, function(v) opt().alertSound = v end))
-    add(checkbox(parent, x, y, "Alert text on screen", "Besides the chat message.",
+    add(checkbox(parent, x, y, "track", "Keep the plan up to date as I level",
+        "Updates after every skill-up, even with the window closed, and tells you when to switch recipes.",
+        function() return opt().track ~= false end, function(v) opt().track = v end), 2)
+    add(checkbox(parent, x, y, "alertSound", "Play a sound when it's time to switch", nil,
+        function() return S.get("alertSound") end, function(v) opt().alertSound = v end), 2)
+    add(checkbox(parent, x, y, "alertScreen", "Also show it in the middle of the screen", nil,
         function() return S.get("alertScreen") end, function(v) opt().alertScreen = v end))
 
     add(heading(parent, y, "Window"))
-    add(slider(parent, x, y, "Window size", nil, 70, 130, 5,
-        function() return math.floor(S.get("scale") * 100 + 0.5) end,
-        function(v) opt().scale = v / 100; if ns.UI and ns.UI.applyScale then ns.UI.applyScale() end end,
-        function(v) return v .. "%" end))
-    add(cycle(parent, x, y, "Open on", "Automatic: Prepare until a plan is ready, Do it while you follow one.",
+    add(checkbox(parent, x, y, "openWithProfession", "Open ProfPath with my profession window", nil,
+        function() return S.get("openWithProfession") end, function(v) opt().openWithProfession = v end), 4)
+    add(choice(parent, x, y, "openTab", "Open on", "Automatic: Prepare until you have a plan, then Do it.",
         { { 0, "Automatic" }, { 1, "Prepare" }, { 2, "Plan" }, { 3, "Do it" } },
-        function() return S.get("openTab") end, function(v) opt().openTab = v end))
-    add(checkbox(parent, x, y, "Minimap button", nil,
+        function() return S.get("openTab") end, function(v) opt().openTab = v end, { cols = 4 }))
+    add(choice(parent, x, y, "scale", "Window size", nil,
+        { { 0.85, "Small" }, { 1, "Normal" }, { 1.15, "Large" }, { 1.3, "Extra large" } },
+        function() return S.get("scale") end,
+        function(v) opt().scale = v; if ns.UI and ns.UI.applyScale then ns.UI.applyScale() end end,
+        { cols = 4, nearest = true }), 4)
+    add(checkbox(parent, x, y, "lockWindow", "Lock the window in place", nil,
+        function() return S.get("lockWindow") end, function(v) opt().lockWindow = v end), 2)
+    add(checkbox(parent, x, y, "minimap", "Show the minimap button", nil,
         function() return not (ProfPathDB.minimap and ProfPathDB.minimap.hide) end,
         function(v)
             ProfPathDB.minimap = ProfPathDB.minimap or { angle = 225 }
             ProfPathDB.minimap.hide = not v or nil
             if ns.Minimap and ns.Minimap.refresh then ns.Minimap.refresh() end
-        end))
+        end), 4)
+    local center = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    center:SetSize(200, 22)
+    center:SetPoint("TOPLEFT", x + 4, -y)
+    center:SetText("Move the window to the middle")
+    center:SetScript("OnClick", function() if ns.UI and ns.UI.resetPosition then ns.UI.resetPosition() end end)
+    S.centerButton = center
+    add(22)
 
     add(heading(parent, y, "Gathering routes"))
-    local colorList = {}
-    for i, c in ipairs(S.COLORS) do
-        colorList[i] = { i, ("|cff%02x%02x%02x%s|r"):format(math.floor(c[2] * 255 + 0.5), math.floor(c[3] * 255 + 0.5), math.floor(c[4] * 255 + 0.5), c[1]) }
-    end
-    add(cycle(parent, x, y, "Route colour", nil, colorList,
+    add(swatches(parent, x, y, "routeColor", "Route colour", S.COLORS,
         function() return S.get("routeColor") end, function(v) opt().routeColor = v; restyleMap() end))
-    add(slider(parent, x, y, "Line width on the world map", nil, 1, 8, 1,
-        function() return S.get("routeWidth") end, function(v) opt().routeWidth = v; restyleMap() end,
-        function(v) return tostring(v) end))
-    add(slider(parent, x, y, "Line width on the minimap", nil, 1, 5, 1,
-        function() return S.get("miniRouteWidth") end, function(v) opt().miniRouteWidth = v; restyleMap() end,
-        function(v) return tostring(v) end))
-    add(checkbox(parent, x, y, "Show the route on the minimap", nil,
-        function() return S.get("miniRoute") end, function(v) opt().miniRoute = v; restyleMap() end))
-    add(checkbox(parent, x, y, "Set a waypoint with Show route", "Points the map arrow at the start of the route (or a cave entrance).",
+    add(choice(parent, x, y, "routeWidth", "Line thickness", nil,
+        { { 2, "Thin" }, { 3, "Normal" }, { 5, "Thick" } },
+        function() return S.get("routeWidth") end,
+        function(v) opt().routeWidth, opt().miniRouteWidth = v, MINI_FOR[v]; restyleMap() end,
+        { cols = 3, nearest = true }), 4)
+    add(checkbox(parent, x, y, "miniRoute", "Draw the route on the minimap too", nil,
+        function() return S.get("miniRoute") end, function(v) opt().miniRoute = v; restyleMap() end), 2)
+    add(checkbox(parent, x, y, "routeWaypoint", "Point the map arrow at the start of the route",
+        "Or at the cave entrance, when the route starts inside one.",
         function() return S.get("routeWaypoint") end, function(v) opt().routeWaypoint = v end))
 
-    y = y + 8
+    add(heading(parent, y, "Advanced"))
+    add(checkbox(parent, x, y, "prune", "Faster price scans",
+        "Skips items that are only used by recipes far too expensive to be worth it.",
+        function() return opt().prune ~= false end, function(v) opt().prune = v end), 2)
+    add(checkbox(parent, x, y, "techDetails", "Show technical details",
+        "Game data build on Prepare, and skipped-recipe counts and calculation time under the plan.",
+        function() return S.get("techDetails") end, function(v) opt().techDetails = v; redraw() end), 4)
+
     local reset = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     reset:SetSize(160, 24)
     reset:SetPoint("TOPLEFT", x, -y)
     reset:SetText("Reset to defaults")
     reset:SetScript("OnClick", function() S.reset() end)
+    S.resetButton = reset
     y = y + 34
     return y
 end
@@ -326,15 +374,18 @@ end
 
 function S.reset()
     local o = opt()
+    -- Everything in this panel; gold and how far ahead (Prepare tab) stay as they are.
     for k in pairs(S.DEFAULTS) do o[k] = nil end
-    o.range, o.target, o.budget, o.budgetAmount, o.reserve = 30, nil, "batch", nil, nil
-    o.ownedFree, o.gather, o.resaleFactor, o.effort, o.prune, o.track = nil, nil, nil, nil, true, true
+    if (o.budget or "off") ~= "off" then o.budget = "batch" end
+    o.reserve = nil
+    o.ownedFree, o.gather, o.resaleFactor, o.effort, o.prune, o.track = false, nil, 0, nil, true, true
     ProfPathDB.minimap = ProfPathDB.minimap or { angle = 225 }
     ProfPathDB.minimap.hide = nil
     if ns.Minimap and ns.Minimap.refresh then ns.Minimap.refresh() end
     if ns.UI and ns.UI.applyScale then ns.UI.applyScale() end
     restyleMap()
     replan()
+    redraw()
     S.refresh()
     ns.chat("Settings reset to defaults.")
 end
